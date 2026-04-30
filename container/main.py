@@ -220,8 +220,21 @@ async def run_scripture_app_builder(
     build_out = work_dir / "build"
     build_out.mkdir(parents=True, exist_ok=True)
 
-    # Bible source
-    bible_dest = assets / f"bible.{payload.bible_source.kind.replace('_zip', '')}.zip"
+    # Bible source. Preserve the URL basename when sensible — SAB's `-b`
+    # appears to use filename heuristics for content sniffing (the priming
+    # script in sillsdev/docker-appbuilder-agent always materializes the
+    # bundle under its original eBible-style name like `eng-web_usfm.zip`).
+    # H-002 in session 5 found that SAB acknowledges the `-b` path in the
+    # banner but reports "no books for book collection 1" at -build time
+    # when the bundle is renamed. Falling back to a deterministic name
+    # only when the URL has no usable basename.
+    from urllib.parse import urlparse
+    url_basename = os.path.basename(urlparse(payload.bible_source.url).path) or ""
+    if url_basename and url_basename.lower().endswith(".zip"):
+        bible_filename = url_basename
+    else:
+        bible_filename = f"bible.{payload.bible_source.kind.replace('_zip', '')}.zip"
+    bible_dest = assets / bible_filename
     await fetch_and_verify(payload.bible_source.url, payload.bible_source.sha256, bible_dest)
 
     # About (optional; SAB will use a default if absent)
