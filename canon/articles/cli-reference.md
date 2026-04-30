@@ -17,8 +17,11 @@ upstream_source: "https://github.com/sillsdev/docker-appbuilder-agent/blob/devel
 # CLI Reference — How the Container Invokes Scripture App Builder
 
 > What the Container actually runs when a `submit_build` lands. The CLI
-> surface is set by the upstream `ghcr.io/sillsdev/app-builders` image,
-> not by us; this article is the authoritative record of what we
+> binaries originate in `ghcr.io/sillsdev/app-builders` (a builder-stage
+> tarball) and reach our runtime via
+> `ghcr.io/sillsdev/appbuilder-agent-prd`, which symlinks them into
+> `/usr/local/bin/`. The flag surface itself is upstream's contract,
+> not ours; this article is the authoritative record of what we
 > currently invoke.
 
 ---

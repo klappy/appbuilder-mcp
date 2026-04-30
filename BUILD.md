@@ -16,10 +16,10 @@ derives_from: "klappy://BUILD (ptxprint-mcp — same Workers Builds GitHub integ
 
 ## Current state (v0.1)
 
-- **Live deployment:** `https://appbuilder-mcp.klappy.workers.dev` *(planned hostname; not yet provisioned at the time of v0.1 scaffold)*
+- **Live deployment:** `https://appbuilder-mcp.klappy.workers.dev` *(R2 bucket and Worker provisioned by Workers Builds 2026-04-30; first container build failed and was fixed in PR/commit pivoting the FROM line — see `canon/encodings/transcript-encoded-session-3.md`)*
 - **Worker version (per `/health`):** `0.1.0`
 - **Spec target:** `v1.0-draft`
-- **Container image:** built from `./Dockerfile`; layered on `ghcr.io/sillsdev/app-builders:${APP_BUILDERS_TAG}` (default `latest`; pin to the burrito-capable tag once delivered — see [`canon/handoffs/burrito-tag-handoff.md`](canon/handoffs/burrito-tag-handoff.md))
+- **Container image:** built from `./Dockerfile`; layered on `ghcr.io/sillsdev/appbuilder-agent-prd:${APP_BUILDERS_TAG}` (default `latest`; pin to the burrito-capable tag once delivered — see [`canon/handoffs/burrito-tag-handoff.md`](canon/handoffs/burrito-tag-handoff.md)). The bare `app-builders` image is a builder-stage carrier and cannot be used as a runtime FROM base.
 - **R2 bucket:** `appbuilder-outputs` (binding `OUTPUTS`)
 - **Durable Objects:** `AppbuilderMcp`, `JobStateDO`, `AppbuilderContainer` (single migration `v1`)
 - **Container instance:** `standard-3` (1/2 vCPU, 12 GiB memory, 20 GB disk), `max_instances: 2`

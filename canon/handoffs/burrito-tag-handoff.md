@@ -22,11 +22,11 @@ status: pending
 
 # Container Handoff — Burrito-Capable Upstream Tag
 
-> **One-line scope.** When the operator delivers the burrito-capable
-> upstream tag of `ghcr.io/sillsdev/app-builders`, swap the Container
-> base image and bump the payload schema to accept `bible_source.kind:
-> "burrito_zip"`. This is a Container-only milestone — Worker code does
-> not need to change.
+> **One-line scope.** When the operator delivers a burrito-capable
+> upstream tag, the Container's FROM line moves to
+> `ghcr.io/sillsdev/appbuilder-agent-prd:<that-tag>` and the payload
+> schema accepts `bible_source.kind: "burrito_zip"`. This is a
+> Container-only milestone — Worker code does not need to change.
 
 ---
 
@@ -36,11 +36,17 @@ The operator said during session 1: "I will get a tag to you in a bit
 that can take a scripture burrito." This handoff lands the work that
 becomes possible once that tag arrives.
 
+The tag will be on `ghcr.io/sillsdev/appbuilder-agent-prd` (the runtime
+SIL publishes from `docker-appbuilder-agent`), not on the bare
+`ghcr.io/sillsdev/app-builders` carrier image — see
+`klappy://canon/encodings/transcript-encoded-session-3` for why the bare
+image cannot be used as a runtime base.
+
 The tag's content is unknown to us at handoff time. We assume:
 
-- It exposes the same four CLI binaries
-  (`scripture-app-builder`, `reading-app-builder`,
-  `dictionary-app-builder`, `keyboard-app-builder`).
+- It exposes the same four CLI binaries (`scripture-app-builder`,
+  `reading-app-builder`, `dictionary-app-builder`,
+  `keyboard-app-builder`) under the same paths as `agent-prd:latest`.
 - The SAB CLI's `-b` flag accepts a burrito zip directly, or there is a
   new flag (e.g. `-burrito` or `-b-format=burrito`) that opts in.
 - Existing USFM-zip and USX-zip inputs continue to work.
@@ -59,15 +65,12 @@ In `Dockerfile`:
 ```diff
 - ARG APP_BUILDERS_TAG=latest
 + ARG APP_BUILDERS_TAG=<the burrito-capable tag>
-  FROM ghcr.io/sillsdev/app-builders:${APP_BUILDERS_TAG} AS upstream
-  ...
-  FROM ghcr.io/sillsdev/app-builders:${APP_BUILDERS_TAG}
+  FROM ghcr.io/sillsdev/appbuilder-agent-prd:${APP_BUILDERS_TAG}
 ```
 
 Pin the tag explicitly (e.g.
-`ghcr.io/sillsdev/app-builders:burrito-2026.05`). Track the pin
-discipline from `klappy://canon/articles/_archive/font-resolution-design`
-(ptxprint-mcp) — bumping the base image is a deliberate change.
+`ghcr.io/sillsdev/appbuilder-agent-prd:burrito-2026.05`). Bumping the
+base image is a deliberate change; track it via session encoding.
 
 ### Payload schema (`src/payload.ts`)
 
@@ -133,7 +136,7 @@ if payload.bible_source.kind == "burrito_zip":
 ## Validation steps
 
 1. **Image pulls and runs.** `docker run --rm
-   ghcr.io/sillsdev/app-builders:<tag> /bin/bash -c 'which
+   ghcr.io/sillsdev/appbuilder-agent-prd:<tag> /bin/bash -c 'which
    scripture-app-builder'` returns a path.
 2. **Existing fixture still builds.** Submit the canonical
    `eng-web_usfm.zip` fixture as `kind: "usfm_zip"`. Verify

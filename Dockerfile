@@ -2,71 +2,63 @@
 #
 # AppBuilder MCP container.
 #
-# Two-stage layered design that mirrors what sillsdev/docker-appbuilder-agent does
-# (FROM ghcr.io/sillsdev/app-builders:<tag> AS builder, then COPY into a slim base),
-# but adapted for our needs:
+# Layered on the SIL App Builder Agent production image, which IS the
+# operator-tested runtime SAB / RAB / DAB / KAB CLIs ship with. We add a
+# Python FastAPI HTTP handler and a bundled debug keystore on top.
 #
-#   1. Pull the upstream sillsdev/app-builders image, which provides the four
-#      build CLIs (scripture-app-builder, reading-app-builder,
-#      dictionary-app-builder, keyboard-app-builder) plus the Android SDK,
-#      JDK, Gradle, fontconfig, and so on. v0.1 uses :latest; the
-#      burrito-capable tag will be pinned in once delivered (see
-#      canon/handoffs/burrito-tag-handoff.md).
-#
-#   2. Layer a Python FastAPI HTTP handler on top so the Cloudflare Container
-#      can receive POST /jobs invocations, run scripture-app-builder, classify
-#      the result, and stream the APK to R2.
+# Why agent-prd and not the bare app-builders image:
+# `ghcr.io/sillsdev/app-builders` is a builder-stage carrier (single
+# imported tarball layer, no shell, no Cmd, no entrypoint) — it cannot
+# function as a runtime FROM base. Every RUN against it dies with
+# `exec: "/bin/sh": stat /bin/sh: no such file or directory`. The
+# operator's own docker-appbuilder-agent uses it only via
+# `COPY --from=builder /` into a separate phusion/baseimage runtime, then
+# layers ansible-installed Android SDK, JDK, Ruby, etc. The result of that
+# whole pipeline is published as ghcr.io/sillsdev/appbuilder-agent-prd —
+# which is exactly the runtime base we want.
 #
 # v0.1 PoC scope (per canon/specs/appbuilder-mcp-v1-spec.md §3):
-#   - SAB only.
-#   - APK only.
-#   - Bundled debug keystore as the Phase-0 floor (caller can override).
-#   - USFM/USX zip input via -b flag (burrito support deferred to the
-#     burrito-capable upstream tag — Container-only swap, no Worker change).
+#   - SAB only (RAB/DAB/KAB binaries are present in the image but unused).
+#   - APK output only.
+#   - Bundled debug keystore as Phase-0 floor; caller can override.
+#   - USFM/USX zip input via -b; burrito-capable upstream tag deferred
+#     (canon/handoffs/burrito-tag-handoff.md).
 #
 # Authority: canon/specs/appbuilder-mcp-v1-spec.md §5 (container shape).
-# Provenance: derived from ptxprint-mcp/Dockerfile pattern (FROM upstream +
-# layer FastAPI), with the upstream/CLI swap and signing-keystore stage
-# being the only structural differences.
+# Provenance: structurally derived from ptxprint-mcp/Dockerfile pattern.
+# History: see canon/encodings/transcript-encoded-session-3.md (D-008
+# revising session-1 D-002 — the FROM-choice error and its fix).
 
+# Default to :latest for v0.1; the burrito-capable tag will be pinned when
+# delivered. ARG so wrangler/build can override at image-build time.
 ARG APP_BUILDERS_TAG=latest
-FROM ghcr.io/sillsdev/app-builders:${APP_BUILDERS_TAG} AS upstream
 
-# ---------- Final image ----------
-
-FROM ghcr.io/sillsdev/app-builders:${APP_BUILDERS_TAG}
+FROM ghcr.io/sillsdev/appbuilder-agent-prd:${APP_BUILDERS_TAG}
 
 LABEL maintainer="klappy" \
   org.opencontainers.image.source="https://github.com/klappy/appbuilder-mcp" \
   org.opencontainers.image.description="appbuilder-mcp container — wraps Scripture App Builder CLI behind a FastAPI HTTP handler"
 
-# Install Python + minimal HTTP-handler dependencies. The upstream image is
-# Ubuntu-based (jammy); python3 is available via apt.
-RUN apt-get update \
- && apt-get install --no-install-recommends -y \
-      python3 python3-pip python3-venv ca-certificates \
- && apt-get clean \
- && rm -rf /var/lib/apt/lists/*
-
+# python3 + python3-pip are already installed in the agent image (ansible
+# uses them). We add only our HTTP-handler runtime deps. --break-system-packages
+# is a defensive flag in case the upstream Python ever moves to PEP 668
+# enforcement; harmless on jammy where it's a no-op.
 WORKDIR /app
 
-# FastAPI HTTP handler layer
 COPY container/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir --break-system-packages -r /app/requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r /app/requirements.txt
 
 COPY container/main.py /app/main.py
 
 # ---------- Bundled debug keystore (Phase-0 floor) ----------
 #
-# The Container ships with a debug keystore so a payload of the absolute
-# minimum {name, package, bible_url} produces a signed-with-debug APK with
-# no caller-side signing setup. This is the SAB analog of ptxprint-mcp's
-# bundled default cfg pattern. Production builds MUST override.
+# The Container ships with a debug keystore generated at image-build time
+# so a payload of {name, package, bible_source} produces a runnable APK
+# with no caller-side signing setup. Production builds MUST override.
 #
 # Authority: canon/articles/bundled-debug-keystore.md.
-# The keystore itself is generated at build time below to avoid committing
-# binary artifacts. The password and alias are baked into the container so
-# the FastAPI handler can pass them to scripture-app-builder via -ks/-i.
+# `keytool` is already in the agent image (Java toolchain is part of the
+# Android build path).
 RUN mkdir -p /app-builders/debug-keystore \
  && keytool -genkey -v \
       -keystore /app-builders/debug-keystore/debug.keystore \
@@ -86,4 +78,8 @@ ENV APPBUILDER_DEBUG_KEYSTORE=/app-builders/debug-keystore/debug.keystore \
 
 EXPOSE 8080
 
+# Override phusion's /sbin/my_init with uvicorn directly. Single-process
+# container; we don't need runit-style service supervision. If that ever
+# becomes load-bearing (e.g. we want syslog), drop a runit script in
+# /etc/service/uvicorn/run and restore CMD ["/sbin/my_init"].
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--log-level", "info", "--app-dir", "/app"]

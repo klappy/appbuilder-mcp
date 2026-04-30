@@ -23,7 +23,7 @@ Agent (Claude Desktop / BT Servant / etc.)
   ▼
 ┌─────────────────────────────────────────────────────────┐
 │ Cloudflare Container       (the only Container image)   │
-│  Base: ghcr.io/sillsdev/app-builders                    │
+│  Base: ghcr.io/sillsdev/appbuilder-agent-prd            │
 │  Stack: scripture-app-builder + Android SDK + JDK +     │
 │         Gradle + Python FastAPI handler                 │
 │  Per job:                                               │
@@ -96,7 +96,7 @@ MIT. See [`LICENSE`](LICENSE).
 
 ## Upstream / sister projects
 
-- [`sillsdev/app-builders`](https://github.com/sillsdev/app-builders) (`ghcr.io/sillsdev/app-builders`) — the upstream container with the four SIL App Builder CLIs.
-- [`sillsdev/docker-appbuilder-agent`](https://github.com/sillsdev/docker-appbuilder-agent) — SIL's AWS CodeBuild wrapper around the upstream image; the SAB CLI surface used here was recovered from this repo's ansible priming command.
+- [`sillsdev/app-builders`](https://github.com/sillsdev/app-builders) (`ghcr.io/sillsdev/app-builders`) — the upstream container *carrier* for the four SIL App Builder CLIs (SAB / RAB / DAB / KAB shell scripts and asset files). It is a builder-stage tarball image, not a runtime; it has no shell. Used only via `COPY --from=...` by downstream pipelines.
+- [`sillsdev/docker-appbuilder-agent`](https://github.com/sillsdev/docker-appbuilder-agent) — SIL's pipeline that turns the carrier into a runtime: phusion/baseimage + ansible-installed Android SDK + JDK + Gradle + the SAB binaries symlinked into `/usr/local/bin/`. The output is published as `ghcr.io/sillsdev/appbuilder-agent-prd` (production, master branch) and `appbuilder-agent-stg` (staging, develop branch) — **this is the image we layer on** in [`Dockerfile`](Dockerfile).
 - [`klappy/ptxprint-mcp`](https://github.com/klappy/ptxprint-mcp) — sister MCP server for PTXprint typesetting; the architectural pattern this server forks. Most canon docs here carry `derives_from:` pointers into ptxprint-mcp.
 - [SIL Scripture App Builder](https://software.sil.org/scriptureappbuilder/) — the upstream project's home page and the GUI / "Building Apps" PDF.

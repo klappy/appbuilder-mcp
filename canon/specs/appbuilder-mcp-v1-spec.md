@@ -42,10 +42,11 @@ status: draft_for_review
   and tracked as v1.x increments.
 - APK output only. AAB / IPA / PWA are out of scope for v1.0; PWA is the
   closest add (single SAB flag) and is the natural v1.1 candidate.
-- Bible source as USFM zip or USX zip (the current bare
-  `ghcr.io/sillsdev/app-builders` CLI surface, fed to `-b`). Scripture
-  burrito support arrives as a Container-only swap once the burrito-capable
-  upstream tag is delivered (see
+- Bible source as USFM zip or USX zip (the SAB CLI's `-b` argument; the
+  binaries originate in `ghcr.io/sillsdev/app-builders` and are
+  shipped at runtime through the SIL `appbuilder-agent-prd` image we
+  layer on). Scripture burrito support arrives as a Container-only swap
+  once the burrito-capable upstream tag is delivered (see
   `klappy://canon/handoffs/burrito-tag-handoff`).
 - Bundled debug keystore as the Phase-0 floor. Caller can override with
   payload-supplied keystore. See
@@ -193,8 +194,15 @@ payloads remain valid.
 ## §5 — Container
 
 - **Image:** built from `./Dockerfile` at deploy time. FROM
-  `ghcr.io/sillsdev/app-builders:${APP_BUILDERS_TAG}` (default
-  `latest`; bump to the burrito-capable tag when delivered).
+  `ghcr.io/sillsdev/appbuilder-agent-prd:${APP_BUILDERS_TAG}` (default
+  `latest`; bump to the burrito-capable tag when delivered). The
+  agent-prd image is the operator-tested SAB runtime — phusion/baseimage
+  + ansible-installed Android SDK + JDK + Gradle + the four SAB shell
+  scripts symlinked into `/usr/local/bin/`. The bare
+  `ghcr.io/sillsdev/app-builders` image is a builder-stage carrier with
+  no shell and cannot be used as a runtime FROM base; see
+  `klappy://canon/encodings/transcript-encoded-session-3` for the
+  empirical confirmation and revision of session-1 D-002.
 - **Instance type:** `standard-3` (1/2 vCPU, 12 GiB RAM, 20 GB disk). The
   Android toolchain is materially heavier than PTXprint's TeX install;
   this is the smallest CF Container size that comfortably fits the SDK +
