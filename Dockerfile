@@ -67,6 +67,13 @@ COPY container/main.py /app/main.py
 # Authority: canon/articles/bundled-debug-keystore.md.
 # `keytool` is already in the agent image (Java toolchain is part of the
 # Android build path).
+#
+# debug.properties format: SAB consumes its `-i <file>` argument as an
+# "additional parameters file" — flat lines of CLI flags, NOT Java
+# key=value properties. Per the SIL "Building Apps" PDF §4.14 (page 37–38)
+# and verified empirically against the priming script's keystore_prime.txt
+# in sillsdev/docker-appbuilder-agent. Session 5 H-002 first smoke caught
+# the prior key=value form as a silent no-op.
 RUN mkdir -p /app-builders/debug-keystore \
  && keytool -genkey -v \
       -keystore /app-builders/debug-keystore/debug.keystore \
@@ -76,7 +83,7 @@ RUN mkdir -p /app-builders/debug-keystore \
       -storepass appbuilder-mcp-debug \
       -keypass appbuilder-mcp-debug \
       -dname "CN=appbuilder-mcp debug, OU=appbuilder-mcp, O=klappy, L=Unknown, ST=Unknown, C=US" \
- && printf 'storePassword=appbuilder-mcp-debug\nkeyAlias=appbuilder-mcp-debug\nkeyPassword=appbuilder-mcp-debug\n' \
+ && printf -- '-ksp appbuilder-mcp-debug\n-ka appbuilder-mcp-debug\n-kap appbuilder-mcp-debug\n' \
       > /app-builders/debug-keystore/debug.properties \
  && chmod 644 /app-builders/debug-keystore/*
 

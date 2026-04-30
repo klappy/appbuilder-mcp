@@ -37,16 +37,23 @@ HOME=/root scripture-app-builder \
   -p <payload.package> \
   -b <materialized bible zip> \
   -ks <keystore> \
-  -i <keystore-info> \
+  -i <additional-parameters-file> \
   [-a <about.txt>] \
   [-ic <icon-path>]... \
   [-build-modern-pwa] \
-  -fp build=<scratch-build-dir>
+  -fp build=<scratch-build-dir> \
+  -build
 ```
 
 The `[ ]` brackets denote conditional flags. `-a`, `-ic`, and
 `-build-modern-pwa` are emitted only when the payload has the corresponding
 field populated (see `klappy://canon/articles/payload-construction`).
+
+`-build` is **always** appended — without it, SAB only creates the project
+on disk and exits without compiling. The
+`sillsdev/docker-appbuilder-agent` priming script omits `-build`, which
+is why session 5's first H-002 smoke found a 4-second silent exit; the
+authoritative reference is the SIL "Building Apps" PDF §4.14 (page 37–38).
 
 ---
 
@@ -63,6 +70,16 @@ on an existing project; this would require persisting project state to
 R2 between submits, which moves us off the "pure function" line. Likely
 not worth it; if a caller wants iteration, they re-submit a refined
 payload.
+
+### `-build`
+
+Triggers compilation. Used together with either `-new` or `-load`. The
+SAB CLI's behavior without `-build` is "configure only, no build" —
+SAB writes the project files, prints the parameter banner, and exits 0.
+H-002 in session 5 surfaced this empirically; the priming script in
+`sillsdev/docker-appbuilder-agent` exhibits the same shape, which is why
+its "Prime gradle cache with build" step is commented out — it never
+actually built anything.
 
 ### `-n <name>`
 
@@ -82,21 +99,52 @@ The bible content. SAB accepts USFM zips and USX zips by content
 sniffing; the kind discriminator in `payload.bible_source.kind` is for
 our own clarity (and for the future burrito tag's discrimination).
 
-### `-ks <keystore-path>`, `-i <keystore-info-path>`
+### `-ks <keystore-path>`, `-ksp <store-password>`, `-ka <key-alias>`, `-kap <key-password>`
 
 Signing material. The `-ks` argument is the Java keystore (`.keystore`).
-The `-i` argument is a plaintext file with three lines:
+Per SIL PDF page 38, the credential flags are separate:
 
-```
-storePassword=<password>
-keyAlias=<alias>
-keyPassword=<password>
-```
+- `-ks <filename>` — keystore file path
+- `-ksp <password>` — keystore (store) password
+- `-ka <alias>` — key alias inside the keystore
+- `-kap <password>` — key (alias) password
+
+In practice, SAB callers pass the credential flags via an additional-
+parameters file referenced by `-i` (see below) rather than on the main
+command line, so secrets do not appear in process args.
 
 When `payload.keystore` is absent, the Container substitutes the bundled
 debug keystore (env vars `APPBUILDER_DEBUG_KEYSTORE` and
-`APPBUILDER_DEBUG_KEYSTORE_INFO`, set in the Dockerfile). See
-`klappy://canon/articles/bundled-debug-keystore`.
+`APPBUILDER_DEBUG_KEYSTORE_INFO`, set in the Dockerfile), where the info
+file contains:
+
+```
+-ksp appbuilder-mcp-debug
+-ka appbuilder-mcp-debug
+-kap appbuilder-mcp-debug
+```
+
+See `klappy://canon/articles/bundled-debug-keystore`.
+
+### `-i <additional-parameters-file>`
+
+Loads additional CLI parameters from a file. The file format is one
+flag per line, exactly as on the command line — e.g.
+
+```
+-ksp my-store-password
+-ka my-key-alias
+-kap my-key-password
+```
+
+This is **not** a Java-style key=value properties file. SAB silently
+ignores lines that don't start with a recognized flag. The session-5
+H-002 finding traced a "no APK produced" failure to a debug.properties
+file written in `storePassword=...` form — SAB read it, saw no
+recognized flags, and proceeded with no signing credentials.
+
+The file is the canonical location for secrets so they don't appear in
+container process listings.
 
 ### `-a <about.txt>`
 
@@ -165,8 +213,25 @@ flag mapping.
 
 ## Provenance
 
-This article documents the CLI surface verified empirically from
-`sillsdev/docker-appbuilder-agent`'s ansible priming command in
-`ansible/roles/app-builders/tasks/main.yml`. The structural shape of the
-article (flag-by-flag, "what lives outside") is forked from
-`klappy://canon/articles/cli-reference` in ptxprint-mcp.
+Authoritative source: SIL "Building Apps" PDF §4.14 (page 37–38),
+"Can I build an app from the command line?". The PDF documents `-new`,
+`-load`, `-build`, `-no-save`, `-?`, `-n`, `-p`, `-b`, `-i`, `-a`, `-f`,
+`-ic`, `-l`, `-ft`, `-vc`, `-vn`, `-ks`, `-ksp`, `-ka`, `-kap`, and
+`-fp` and gives a worked example: `sab -new -n "My App" -p
+com.example.myapp -b MyBookBundle.zip -f "Charis SIL Compact" -i
+keys.txt –build`.
+
+This article was originally written from the priming command in
+`sillsdev/docker-appbuilder-agent`'s `ansible/roles/app-builders/tasks/
+main.yml`. Session 5's H-002 first end-to-end smoke surfaced two bugs
+that traced back to that priming script being itself non-functional:
+(1) the priming command omits `-build`, so it never actually built
+anything (the ansible role's "Prime gradle cache with build" step is
+correctly commented out for that reason); (2) the canon article had
+described `-i` as a "keystore-info" file in `key=value` form, when in
+fact `-i` accepts an "additional parameters file" containing CLI flags
+(per PDF page 37). The cli-reference now follows the PDF; the priming
+script is preserved as a historical artifact, not an authority.
+
+The structural shape of the article (flag-by-flag, "what lives outside")
+is forked from `klappy://canon/articles/cli-reference` in ptxprint-mcp.

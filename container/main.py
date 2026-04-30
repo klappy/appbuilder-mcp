@@ -195,14 +195,25 @@ async def run_scripture_app_builder(
 
     Returns (exit_code, log_text, apk_path_or_None).
 
-    CLI surface (per sillsdev/docker-appbuilder-agent ansible/roles/app-builders):
+    CLI surface, per SIL "Building Apps" PDF §4.14 (page 37–38). The
+    docker-appbuilder-agent priming script omits `-build`, which is why
+    H-002 first smoke caught a 4-second exit with no APK — `-new` alone
+    creates the project on disk but does not compile. `-build` is the
+    flag that tells SAB to actually build (works with either -new or
+    -load).
+
       scripture-app-builder -new -n <name> -p <package> \\
         -b <bible.zip> \\
-        -ks <keystore> -i <keystore-info> \\
+        -ks <keystore> -i <additional-params-file> \\
         [-a <about.txt>] \\
         [-ic <icon> -ic <icon> ...] \\
         [-build-modern-pwa] \\
-        -fp build=<output-dir>
+        -fp build=<output-dir> \\
+        -build
+
+    The `-i <additional-params-file>` is NOT a keystore-info file — it's
+    a flat list of CLI flags. For the bundled debug keystore we ship
+    `-ksp <storepass>\\n-ka <alias>\\n-kap <keypass>\\n` (see Dockerfile).
     """
     assets = work_dir / "assets"
     assets.mkdir(parents=True, exist_ok=True)
@@ -253,6 +264,10 @@ async def run_scripture_app_builder(
     if payload.build_modern_pwa:
         cmd += ["-build-modern-pwa"]
     cmd += ["-fp", f"build={build_out}"]
+    # `-build` triggers actual compilation. Without it, SAB only creates
+    # the project on disk and exits. Per SIL "Building Apps" PDF §4.14;
+    # H-002 found this in session 5.
+    cmd += ["-build"]
 
     log.info("Running SAB: %s", " ".join(cmd))
 
