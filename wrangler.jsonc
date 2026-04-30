@@ -51,16 +51,24 @@
   // Container declaration — the image is built from ./Dockerfile during `wrangler deploy`.
   // standard-3 = 1/2 vCPU, 12 GiB memory, 20 GB disk — chosen because the SAB
   // Android toolchain (JDK + Android SDK + Gradle cache) is materially larger
-  // than PTXprint's TeX install. v0.1 sets max_instances=2 for cost control;
-  // bump in v0.x as load demands. ptxprint-mcp uses standard-2 (1 vCPU, 6 GiB,
-  // 12 GB) — appbuilder-mcp will revisit sizing after first end-to-end build.
+  // than PTXprint's TeX install. ptxprint-mcp uses standard-2 (1 vCPU, 6 GiB,
+  // 12 GB) — appbuilder-mcp may revisit sizing after several end-to-end builds.
   //
-  // Authority: canon/specs/appbuilder-mcp-v1-spec.md §5.
+  // max_instances=10 — bumped from 2 in session 6 (Open-010). The original 2
+  // was a conservative guess at "cost control" without empirical cost data;
+  // in practice it produced a hard ceiling that blocked back-to-back smoke
+  // attempts within the 60m sleepAfter window. CF Containers bills
+  // running-instance-seconds, not provisioned ceiling, so a higher
+  // max_instances costs nothing while idle and unblocks iteration. Lower if
+  // the actual bill surprises.
+  //
+  // Authority: canon/specs/appbuilder-mcp-v1-spec.md §5; operator directive
+  // captured in canon/encodings/transcript-encoded-session-6.md (D-013).
   "containers": [
     {
       "class_name": "AppbuilderContainer",
       "image": "./Dockerfile",
-      "max_instances": 2,
+      "max_instances": 10,
       "instance_type": "standard-3"
     }
   ],
