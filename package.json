@@ -1,0 +1,32 @@
+{
+  "name": "appbuilder-mcp",
+  "version": "0.1.0",
+  "description": "Scripture App Builder MCP server — stateless content-addressed APK building on Cloudflare Workers + Containers. Modeled on klappy/ptxprint-mcp.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "tsc": "tsc --noEmit",
+    "cf-typegen": "wrangler types",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "bundle-policy": "node --import tsx/esm scripts/bundle-telemetry-policy.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "^0.1.0",
+    "@modelcontextprotocol/sdk": "1.23.0",
+    "agents": "^0.2.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251024.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.5",
+    "wrangler": "^4.20.0"
+  }
+}
