@@ -23,7 +23,8 @@ Agent (Claude Desktop / BT Servant / etc.)
   ▼
 ┌─────────────────────────────────────────────────────────┐
 │ Cloudflare Container       (the only Container image)   │
-│  Base: ghcr.io/sillsdev/appbuilder-agent-prd            │
+│  Base: ghcr.io/sillsdev/appbuilder-agent-stg            │
+│        :feature-scripture-burrito                       │
 │  Stack: scripture-app-builder + Android SDK + JDK +     │
 │         Gradle + Python FastAPI handler                 │
 │  Per job:                                               │
@@ -61,8 +62,10 @@ builds.
 - **SAB only.** RAB / DAB / KAB are out of scope; the upstream image
   bundles them and v1.x can expose them.
 - **APK only.** AAB / IPA / PWA are deferred to v1.x.
-- **USFM zip and USX zip input.** Scripture burrito support arrives once
-  the burrito-capable upstream tag is delivered (Container-only swap).
+- **USFM zip, USX zip, and scripture burrito zip input.** Burrito support
+  landed in v1.1 by pinning
+  `ghcr.io/sillsdev/appbuilder-agent-stg:feature-scripture-burrito`; see
+  [`canon/handoffs/burrito-tag-handoff.md`](canon/handoffs/burrito-tag-handoff.md) (status: complete).
 - **Bundled debug keystore** as the Phase-0 floor; caller can override.
 - **Six MCP tools.** Mirror of ptxprint-mcp's surface.
 
@@ -82,13 +85,29 @@ For maintainers picking up the project:
 
 ## Status
 
-**v0.1 — initial scaffold pushed; not yet deployed; not yet validated
-end-to-end.** The bootstrap session journal at
-`canon/encodings/transcript-encoded-session-1.md` lists open items
-including a clean `tsc` pass, first end-to-end build (H-002), and the
-burrito-tag handoff (H-001). Telemetry governance is
-`draft_pending_fresh_review` per
-`klappy://canon/principles/verification-requires-fresh-context`.
+**v0.1 — initial scaffold deployed via Workers Builds (sessions 1–3); session 4 pinned the burrito-capable image (closes H-001) and the next push triggers the deploy.** The bootstrap session journals at
+`canon/encodings/transcript-encoded-session-{1,2,3,4}.md` carry the full
+audit trail. Active milestones:
+
+- **H-002** — first end-to-end smoke build using the canonical
+  `eng-web_usfm.zip` fixture; verify `failure_mode: "success"` then
+  resubmit byte-identical to confirm cache hit.
+- **H-006** — observe the Workers Builds deploy of the burrito-pinned
+  image; `/health` should remain 200 and a smoke job dispatched to the
+  Container should pull
+  `ghcr.io/sillsdev/appbuilder-agent-stg:feature-scripture-burrito`
+  (1.7 GiB, single amd64 manifest).
+- **H-003** — telemetry-governance fresh-context review per
+  `klappy://canon/principles/verification-requires-fresh-context`
+  (`canon/governance/telemetry-governance.md` carries
+  `status: draft_pending_fresh_review`).
+- **Open-006** — image disk-margin observation on the Container
+  (`standard-3` ships with 20 GiB; first cold Gradle cache build is the
+  worst case).
+- **Open-007** — promote the stg feature branch to a stable
+  `appbuilder-agent-prd:<tag>` once the upstream PR merges.
+- **Open-008** — single-platform amd64 manifest; observe whether
+  upstream adds arm64 later.
 
 ## License
 

@@ -17,7 +17,16 @@ applied_canon:
   - "klappy://canon/principles/vodka-architecture"
   - "klappy://canon/principles/dry-canon-says-it-once"
   - "klappy://canon/principles/maintainability-one-person-indefinitely"
-status: pending
+status: complete
+resolved_at: 2026-04-30
+resolved_by: "session-4 (claude); pinned via Dockerfile ARG APP_BUILDERS_IMAGE"
+resolution_evidence:
+  - "Dockerfile pins ghcr.io/sillsdev/appbuilder-agent-stg:feature-scripture-burrito"
+  - "manifest digest sha256:b59ddf6160523a22b141959a79c2bc82648693953ebf6e5b29ec2597979e499c (verified via ghcr.io/v2 GET, single amd64 platform)"
+  - "src/payload.ts BibleSourceSchema accepts kind='burrito_zip' and schema_version ∈ {'1.0','1.1'}"
+  - "container/main.py BibleSourceModel docstring + kind comment updated"
+  - "canon/encodings/transcript-encoded-session-4.md D-009, D-010, O-009, O-010, H-006"
+  - "End-to-end smoke build (H-002) is the next milestone — closing this handoff lands the code+image surface; the smoke validates the runtime."
 ---
 
 # Container Handoff — Burrito-Capable Upstream Tag

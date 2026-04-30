@@ -16,10 +16,10 @@ derives_from: "klappy://BUILD (ptxprint-mcp — same Workers Builds GitHub integ
 
 ## Current state (v0.1)
 
-- **Live deployment:** `https://appbuilder-mcp.klappy.workers.dev` *(R2 bucket and Worker provisioned by Workers Builds 2026-04-30; first container build failed and was fixed in PR/commit pivoting the FROM line — see `canon/encodings/transcript-encoded-session-3.md`)*
+- **Live deployment:** `https://appbuilder-mcp.klappy.workers.dev` *(R2 bucket and Worker provisioned by Workers Builds 2026-04-30; first container build failed and was fixed in PR/commit pivoting the FROM line — see `canon/encodings/transcript-encoded-session-3.md`. Session 4 then pinned the burrito-capable image — see `canon/encodings/transcript-encoded-session-4.md`.)*
 - **Worker version (per `/health`):** `0.1.0`
-- **Spec target:** `v1.0-draft`
-- **Container image:** built from `./Dockerfile`; layered on `ghcr.io/sillsdev/appbuilder-agent-prd:${APP_BUILDERS_TAG}` (default `latest`; pin to the burrito-capable tag once delivered — see [`canon/handoffs/burrito-tag-handoff.md`](canon/handoffs/burrito-tag-handoff.md)). The bare `app-builders` image is a builder-stage carrier and cannot be used as a runtime FROM base.
+- **Spec target:** `v1.1-draft`
+- **Container image:** built from `./Dockerfile`; layered on `${APP_BUILDERS_IMAGE}` which defaults to `ghcr.io/sillsdev/appbuilder-agent-stg:feature-scripture-burrito` (pinned in session 4 to land scripture burrito input — closes H-001 per [`canon/handoffs/burrito-tag-handoff.md`](canon/handoffs/burrito-tag-handoff.md)). The bare `app-builders` image is a builder-stage carrier and cannot be used as a runtime FROM base. Promotion to a stable `appbuilder-agent-prd:<tag>` is tracked as Open-007 against the upstream feature-branch merge.
 - **R2 bucket:** `appbuilder-outputs` (binding `OUTPUTS`)
 - **Durable Objects:** `AppbuilderMcp`, `JobStateDO`, `AppbuilderContainer` (single migration `v1`)
 - **Container instance:** `standard-3` (1/2 vCPU, 12 GiB memory, 20 GB disk), `max_instances: 2`

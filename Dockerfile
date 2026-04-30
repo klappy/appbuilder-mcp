@@ -21,19 +21,27 @@
 #   - SAB only (RAB/DAB/KAB binaries are present in the image but unused).
 #   - APK output only.
 #   - Bundled debug keystore as Phase-0 floor; caller can override.
-#   - USFM/USX zip input via -b; burrito-capable upstream tag deferred
-#     (canon/handoffs/burrito-tag-handoff.md).
+#   - USFM / USX / burrito zip input via -b. Burrito support arrived in
+#     session 4 by pinning the staging branch
+#     `appbuilder-agent-stg:feature-scripture-burrito` (D-009; closes H-001).
+#     Open-007 tracks the promotion to a stable
+#     `appbuilder-agent-prd:<tag>` once the upstream feature branch merges.
 #
 # Authority: canon/specs/appbuilder-mcp-v1-spec.md §5 (container shape).
 # Provenance: structurally derived from ptxprint-mcp/Dockerfile pattern.
-# History: see canon/encodings/transcript-encoded-session-3.md (D-008
-# revising session-1 D-002 — the FROM-choice error and its fix).
+# History:
+#   - canon/encodings/transcript-encoded-session-3.md (D-008 revising
+#     session-1 D-002 — the FROM-choice error and its fix).
+#   - canon/encodings/transcript-encoded-session-4.md (D-009 — pinning
+#     stg:feature-scripture-burrito; D-010 — collapsing to a single
+#     `APP_BUILDERS_IMAGE` ARG so the full image+tag is one substitution).
 
-# Default to :latest for v0.1; the burrito-capable tag will be pinned when
-# delivered. ARG so wrangler/build can override at image-build time.
-ARG APP_BUILDERS_TAG=latest
+# Full image reference as a single ARG. Override at image-build time when
+# moving to stg/prd or to a different feature branch — keeps the substitution
+# point one place rather than two coupled ARGs (image + tag).
+ARG APP_BUILDERS_IMAGE=ghcr.io/sillsdev/appbuilder-agent-stg:feature-scripture-burrito
 
-FROM ghcr.io/sillsdev/appbuilder-agent-prd:${APP_BUILDERS_TAG}
+FROM ${APP_BUILDERS_IMAGE}
 
 LABEL maintainer="klappy" \
   org.opencontainers.image.source="https://github.com/klappy/appbuilder-mcp" \

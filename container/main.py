@@ -61,12 +61,14 @@ app = FastAPI(title="appbuilder-mcp container", version="0.1.0")
 class BibleSourceModel(BaseModel):
     """Bible content the SAB CLI will accept as -b argument.
 
-    v0.1 supports kind ∈ {"usfm_zip", "usx_zip"}. The burrito-capable upstream
-    tag will add kind="burrito_zip" — Container-only schema bump per
-    canon/handoffs/burrito-tag-handoff.md.
+    v1.1 supports kind ∈ {"usfm_zip", "usx_zip", "burrito_zip"}. Burrito
+    support arrived in session 4 by pinning the staging branch
+    `appbuilder-agent-stg:feature-scripture-burrito` (D-009; closes H-001).
+    The Container forwards the zip to SAB via -b regardless of kind; SAB's
+    burrito branch auto-detects the format from the zip contents.
     """
 
-    kind: str  # "usfm_zip" | "usx_zip"
+    kind: str  # "usfm_zip" | "usx_zip" | "burrito_zip"
     url: str
     sha256: str
 

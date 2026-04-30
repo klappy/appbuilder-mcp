@@ -37,7 +37,8 @@ Agent (Claude Desktop / BT Servant / etc.)
 │ Cloudflare Container       (the only Container image)   │
 │  Instance: standard-3 (1/2 vCPU, 12 GiB, 20 GB disk)    │
 │  sleepAfter: 60m                                        │
-│  Base: ghcr.io/sillsdev/appbuilder-agent-prd            │
+│  Base: ghcr.io/sillsdev/appbuilder-agent-stg            │
+│        :feature-scripture-burrito                       │
 │  Stack: scripture-app-builder CLI + Android SDK + JDK + │
 │         Gradle + fontconfig + Python FastAPI handler    │
 │                                                         │

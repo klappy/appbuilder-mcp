@@ -77,7 +77,7 @@ The bible content the SAB CLI will consume via its `-b` flag.
 
 ```
 {
-  "kind": "usfm_zip" | "usx_zip",
+  "kind": "usfm_zip" | "usx_zip" | "burrito_zip",
   "url": "<https URL>",
   "sha256": "<64 hex chars>"
 }
@@ -86,8 +86,32 @@ The bible content the SAB CLI will consume via its `-b` flag.
 The Container streams the URL and verifies sha256 as bytes arrive; a
 mismatch is a hard failure before SAB ever runs.
 
-The burrito-capable upstream tag will add `kind: "burrito_zip"`. That is a
-schema_version bump to "1.1"; current 1.0 payloads remain valid.
+**Burrito format (v1.1).** Scripture burrito support landed in v1.1 by
+pinning `ghcr.io/sillsdev/appbuilder-agent-stg:feature-scripture-burrito`
+(see `klappy://canon/handoffs/burrito-tag-handoff` — closed; and
+`klappy://canon/encodings/transcript-encoded-session-4` D-009). Burrito
+payloads must declare `schema_version: "1.1"`; existing `1.0` payloads
+remain valid as long as `bible_source.kind ∈ {"usfm_zip", "usx_zip"}`.
+
+Worked example for a burrito payload:
+
+```json
+{
+  "schema_version": "1.1",
+  "name": "Web Bible (Burrito)",
+  "package": "org.ebible.web.burrito",
+  "bible_source": {
+    "kind": "burrito_zip",
+    "url": "https://example.org/eng-web.burrito.zip",
+    "sha256": "<64 hex chars of the burrito zip>"
+  }
+}
+```
+
+The Container forwards the zip to SAB via `-b` regardless of `kind`; the
+burrito-capable upstream branch auto-detects the format from the zip
+contents (see `klappy://canon/articles/cli-reference` for the `-b`
+surface).
 
 ### `about_url`, `about_sha256` (optional)
 

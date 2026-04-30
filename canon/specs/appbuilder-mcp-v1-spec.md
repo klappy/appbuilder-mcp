@@ -7,7 +7,7 @@ exposure: working
 voice: neutral
 stability: working
 tags: ["appbuilder", "mcp", "spec", "v1", "vodka-architecture", "cloudflare", "scripture-app-builder"]
-version: v1.0-draft
+version: v1.1-draft
 date: 2026-04-30
 applied_canon:
   - klappy://canon/principles/vodka-architecture
@@ -42,12 +42,14 @@ status: draft_for_review
   and tracked as v1.x increments.
 - APK output only. AAB / IPA / PWA are out of scope for v1.0; PWA is the
   closest add (single SAB flag) and is the natural v1.1 candidate.
-- Bible source as USFM zip or USX zip (the SAB CLI's `-b` argument; the
-  binaries originate in `ghcr.io/sillsdev/app-builders` and are
-  shipped at runtime through the SIL `appbuilder-agent-prd` image we
-  layer on). Scripture burrito support arrives as a Container-only swap
-  once the burrito-capable upstream tag is delivered (see
-  `klappy://canon/handoffs/burrito-tag-handoff`).
+- Bible source as USFM zip, USX zip, or scripture burrito zip (the SAB
+  CLI's `-b` argument; the binaries originate in
+  `ghcr.io/sillsdev/app-builders` and are shipped at runtime through the
+  SIL `appbuilder-agent-*` image we layer on). v1.1 lands burrito support
+  by pinning the staging branch
+  `ghcr.io/sillsdev/appbuilder-agent-stg:feature-scripture-burrito` (D-009;
+  closes H-001); promotion to a stable `appbuilder-agent-prd:<tag>` is
+  tracked as Open-007 against the upstream feature-branch merge.
 - Bundled debug keystore as the Phase-0 floor. Caller can override with
   payload-supplied keystore. See
   `klappy://canon/articles/bundled-debug-keystore`.
@@ -157,11 +159,12 @@ See `src/payload.ts` for the zod definition of record. Authoritative fields:
 
 ```
 {
-  schema_version: "1.0",        // literal
+  schema_version: "1.0" | "1.1",  // union; 1.1 is required iff
+                                  // bible_source.kind == "burrito_zip"
   name: string,                 // 1..64
   package: string,              // Java reverse-DNS, e.g. "org.ebible.web"
   bible_source: {
-    kind: "usfm_zip" | "usx_zip",
+    kind: "usfm_zip" | "usx_zip" | "burrito_zip",
     url: string,                // https
     sha256: string              // 64 hex
   },
@@ -183,26 +186,34 @@ See `src/payload.ts` for the zod definition of record. Authoritative fields:
 **Canonical payload** for hashing follows RFC 8785: object keys in
 lexicographic order, no whitespace, smallest valid JSON form for primitives.
 
-**Burrito-capable extension** (per
-`klappy://canon/handoffs/burrito-tag-handoff`): once the upstream tag is
-delivered, `bible_source.kind` adds `"burrito_zip"`. This is a
-strict-extension schema bump (`schema_version: "1.1"`) — old `1.0`
-payloads remain valid.
+**Burrito support landed in v1.1** (closes H-001 per
+`klappy://canon/handoffs/burrito-tag-handoff`). The Container's FROM line
+now pins `ghcr.io/sillsdev/appbuilder-agent-stg:feature-scripture-burrito`
+(D-009 in `klappy://canon/encodings/transcript-encoded-session-4`). The
+schema bump is strict-extension: `1.0` payloads remain valid; `1.1` adds
+`burrito_zip` as an accepted `bible_source.kind`. Promotion of the upstream
+image from the stg feature branch to a stable `appbuilder-agent-prd:<tag>`
+is tracked as Open-007.
 
 ---
 
 ## §5 — Container
 
 - **Image:** built from `./Dockerfile` at deploy time. FROM
-  `ghcr.io/sillsdev/appbuilder-agent-prd:${APP_BUILDERS_TAG}` (default
-  `latest`; bump to the burrito-capable tag when delivered). The
-  agent-prd image is the operator-tested SAB runtime — phusion/baseimage
+  `${APP_BUILDERS_IMAGE}` where the build-arg defaults to
+  `ghcr.io/sillsdev/appbuilder-agent-stg:feature-scripture-burrito` (D-009;
+  the staging branch that lands burrito-format input support, closing
+  H-001). Open-007 tracks promotion to a stable
+  `appbuilder-agent-prd:<tag>` once the upstream feature branch merges.
+  The agent-* image is the operator-tested SAB runtime — phusion/baseimage
   + ansible-installed Android SDK + JDK + Gradle + the four SAB shell
   scripts symlinked into `/usr/local/bin/`. The bare
   `ghcr.io/sillsdev/app-builders` image is a builder-stage carrier with
   no shell and cannot be used as a runtime FROM base; see
   `klappy://canon/encodings/transcript-encoded-session-3` for the
-  empirical confirmation and revision of session-1 D-002.
+  empirical confirmation and revision of session-1 D-002. The image is a
+  single-platform amd64 manifest (Open-008 — observe; CF builders are
+  amd64 so this matches today, but the upstream may add arm64 later).
 - **Instance type:** `standard-3` (1/2 vCPU, 12 GiB RAM, 20 GB disk). The
   Android toolchain is materially heavier than PTXprint's TeX install;
   this is the smallest CF Container size that comfortably fits the SDK +

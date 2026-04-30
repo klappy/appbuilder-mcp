@@ -26,12 +26,15 @@ import { z } from "zod";
 /**
  * Bible content the SAB CLI consumes via -b.
  *
- * v0.1 supports kind ∈ {"usfm_zip", "usx_zip"}. The burrito-capable upstream
- * tag will add kind="burrito_zip"; that is a Container-only schema bump,
- * tracked at canon/handoffs/burrito-tag-handoff.md.
+ * v1.1 supports kind ∈ {"usfm_zip", "usx_zip", "burrito_zip"}. Burrito
+ * support arrived in session 4 by pinning the staging branch
+ * `appbuilder-agent-stg:feature-scripture-burrito`; see
+ * `canon/handoffs/burrito-tag-handoff.md` (status: complete) and
+ * `canon/encodings/transcript-encoded-session-4.md` (D-009, H-006).
+ * The schema is strict-extension: existing 1.0 payloads remain valid.
  */
 const BibleSourceSchema = z.object({
-  kind: z.enum(["usfm_zip", "usx_zip"]),
+  kind: z.enum(["usfm_zip", "usx_zip", "burrito_zip"]),
   url: z.string().url(),
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
 });
@@ -50,7 +53,10 @@ const KeystoreSchema = z.object({
 });
 
 export const PayloadSchema = z.object({
-  schema_version: z.literal("1.0"),
+  // 1.0 payloads (no burrito_zip kind) and 1.1 payloads (any kind including
+  // burrito_zip) are both accepted. Strict-extension bump per
+  // canon/specs/appbuilder-mcp-v1-spec.md §4.
+  schema_version: z.union([z.literal("1.0"), z.literal("1.1")]),
 
   // App identity
   name: z.string().min(1).max(64),
