@@ -43,7 +43,7 @@ ARG APP_BUILDERS_IMAGE=ghcr.io/sillsdev/appbuilder-agent-stg:feature-scripture-b
 
 FROM ${APP_BUILDERS_IMAGE}
 
-LABEL appbuilder_mcp_build_marker="h010-deploy-retry"
+LABEL appbuilder_mcp_build_marker="h002-apk-discovery-fix"
 LABEL maintainer="klappy" \
   org.opencontainers.image.source="https://github.com/klappy/appbuilder-mcp" \
   org.opencontainers.image.description="appbuilder-mcp container — wraps Scripture App Builder CLI behind a FastAPI HTTP handler"
