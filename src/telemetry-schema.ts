@@ -277,9 +277,16 @@ export function rewriteSemanticSql(sql: string): string {
   });
 
   // 2. Locate SELECT...FROM boundaries (case-insensitive).
+  //    Match FROM preceded by any whitespace (space, tab, newline) so
+  //    multiline SQL is handled the same as single-line SQL.
   const upper = stashed.toUpperCase();
   const selectIdx = upper.indexOf("SELECT");
-  const fromIdx = upper.indexOf(" FROM ", selectIdx >= 0 ? selectIdx : 0);
+  const fromMatch = /\sFROM\s/.exec(
+    selectIdx >= 0 ? upper.slice(selectIdx) : upper,
+  );
+  const fromIdx = fromMatch
+    ? (selectIdx >= 0 ? selectIdx : 0) + fromMatch.index
+    : -1;
 
   let processed: string;
   if (selectIdx < 0 || fromIdx < 0) {
@@ -289,7 +296,7 @@ export function rewriteSemanticSql(sql: string): string {
     const before = stashed.slice(0, selectIdx);
     const selectKw = stashed.slice(selectIdx, selectIdx + "SELECT".length);
     const selectBody = stashed.slice(selectIdx + "SELECT".length, fromIdx);
-    const rest = stashed.slice(fromIdx); // " FROM ..." onwards
+    const rest = stashed.slice(fromIdx); // whitespace + "FROM ..." onwards
 
     // SELECT body: split on top-level commas, rewrite each column expression.
     const newSelectBody = splitTopLevel(selectBody, ",")
