@@ -360,7 +360,8 @@ def step_build(session: McpSession, payload_path: str, poll_seconds: int) -> int
             # state == "cancelled" or any other terminal-but-not-success outcome
             return 1
         time.sleep(5)
-    print(f"            timed out at state={last_signature} after {poll_seconds}s")
+    last_state, last_fmode = last_signature if last_signature else ("", "")
+    print(f"            timed out (last signature: {last_state}|{last_fmode}) after {poll_seconds}s")
     print(f"            job_id={job_id} — re-poll later with get_job_status if you want to keep waiting")
     return 3
 
