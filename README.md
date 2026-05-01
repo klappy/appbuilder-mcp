@@ -105,7 +105,7 @@ python3 smoke/quickstart.py            # read-only probe — safe, no build trig
 python3 smoke/quickstart.py --build    # opt-in: submit a real build, poll until terminal
 ```
 
-The script hits `/health`, opens an MCP session over Streamable-HTTP, lists tools as the **server** reports them, exercises the `docs` tool, and (with `--build`) submits the payload in [`smoke/minimum-payload.json`](smoke/minimum-payload.json). A bash + curl version lives at [`smoke/quickstart.sh`](smoke/quickstart.sh). See [`smoke/README.md`](smoke/README.md) for the full layout.
+The script hits `/health`, opens an MCP session over Streamable-HTTP, lists tools as the **server** reports them, exercises the `docs` tool, and (with `--build`) submits the payload in [`smoke/full-payload.json`](smoke/full-payload.json) — the smallest payload known to produce a successful APK against the deployed SAB image (`name + package + bible_source` is the schema floor, but SAB itself rejects builds without launcher icons and an About file; see [`smoke/README.md`](smoke/README.md) §"Why two payloads"). A bash + curl version lives at [`smoke/quickstart.sh`](smoke/quickstart.sh).
 
 If you are wiring up an MCP-aware agent (Claude Desktop, BT Servant, etc.), point its MCP client at `https://appbuilder-mcp.klappy.workers.dev/mcp` (Streamable-HTTP) or `/sse` (legacy SSE). Then ask the deploy's `docs` tool what it knows:
 
@@ -127,6 +127,8 @@ These are absorbed by `smoke/quickstart.{py,sh}` but worth knowing if you write 
 - **Don't skip `notifications/initialized`** between `initialize` and the first `tools/call`. The spec requires it.
 - **The `docs` tool's first call after a Worker cold-start can time out** with `MCP error -32001: Request timed out` at the upstream-oddkit hop. Retry once after a short pause; subsequent calls in the same session are fast.
 - **A job sitting at `state="queued"` for >30s after `submit_build`** likely means the Container hasn't picked it up yet. The Worker writes a "Worker: about to dispatch container.fetch" breadcrumb to JobStateDO before the dispatch — `get_job_status` reflects it. See [`canon/articles/diagnostic-patterns.md`](canon/articles/diagnostic-patterns.md) for the full instrumentation.
+- **The schema-floor "minimum" payload is not a buildable payload.** `submit_build` accepts `name + package + bible_source` per the JSON Schema, but SAB v14.0 build 131 (the bundled image) requires launcher icons (72×72 hdpi + 144×144 xxhdpi) and an About file before it will produce an APK. A schema-floor payload returns `failure_mode: "hard"` in ~4 seconds with that explicit error in `log_tail`. Use [`smoke/full-payload.json`](smoke/full-payload.json) as the buildable starting point.
+- **`get_job_status` has two terminal signals; on the success path only one fires.** `state` ∈ `{succeeded, failed, cancelled}` and `failure_mode` ∈ `{success, soft, hard}` are independent fields. Failed builds flip both. Successful builds have been observed setting `failure_mode="success"` and populating `apk_url` while `state` stays at `"running"` (a state-machine race between the Worker's submit handler and the Container's terminal callback). Treat either signal as terminal; check `failure_mode` for success — don't wait for `state="succeeded"`.
 - **Same payload → same `job_id` (cache hit).** This is by design; the server is content-addressed. Re-submitting an identical payload returns the cached APK URL with no Container run.
 
 ## Status

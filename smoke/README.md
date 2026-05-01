@@ -10,7 +10,8 @@
 |---|---|
 | `quickstart.py` | End-to-end smoke harness in Python (stdlib only, 3.8+). |
 | `quickstart.sh` | Same flow in `bash + curl + python3` for shell-flavored callers. |
-| `minimum-payload.json` | The smallest valid `submit_build` payload — `name`, `package`, and a real `bible_source` URL with verified `sha256`. |
+| `full-payload.json` | The smallest payload that **actually produces an APK** with the deployed SAB image: `name`, `package`, `bible_source`, plus an About file and 72×72 + 144×144 launcher icons. Default for `--build`. |
+| `minimum-payload.json` | The schema-floor payload — only `name`, `package`, `bible_source`. Useful for testing payload validation, but the deployed SAB image rejects it as `failure_mode: "hard"` ("Specify an App Icon..." / "Enter some information for the 'About' page..."). See "Why two payloads" below. |
 | `README.md` | This file. |
 
 Both `quickstart.{py,sh}` accept the same flags and produce comparable output. Pick whichever fits your environment.
@@ -63,36 +64,47 @@ bash smoke/quickstart.sh --build
 
 Adds three steps after the read-only probe:
 
-5. `tools/call submit_build` with the JSON in `smoke/minimum-payload.json`.
-6. `tools/call get_job_status` polled every 5 seconds (default 600s timeout) until the job reaches `succeeded`, `failed`, or `cancelled`.
+5. `tools/call submit_build` with the JSON in [`full-payload.json`](full-payload.json) (the smallest payload known to produce a successful APK against the deployed SAB image).
+6. `tools/call get_job_status` polled every 5 seconds (default 600s timeout) until the job reaches a terminal state — see "Terminal-state detection" below for what counts as terminal and why.
 7. Print the terminal `apk_url` and `log_url` (Worker-proxied R2 reads).
 
-The submitted payload is content-addressed by `sha256(canonical_payload)`. The first agent who runs `--build` triggers a real Container run on the maintainer's worker (cold-cache Android builds are minutes, not seconds). Every subsequent identical `--build` invocation is a cache hit and returns in under a second. **Re-running an unchanged build is free** — that's the architectural property the server is designed around.
+The submitted payload is content-addressed by `sha256(canonical_payload)`. The first agent who runs `--build` for a given payload triggers a real Container run on the maintainer's worker (cold-cache Android builds are roughly five minutes; 13 MB APK observed on first run of `full-payload.json`). Every subsequent identical `--build` invocation is a cache hit and returns in under a second. **Re-running an unchanged build is free** — that's the architectural property the server is designed around.
 
 If you want to verify against your own deploy, override the base URL:
 
 ```bash
 python3 smoke/quickstart.py --base-url https://your-worker.example.workers.dev --build
+# or use a different payload:
+python3 smoke/quickstart.py --build --payload smoke/minimum-payload.json
 ```
 
-## What `minimum-payload.json` references
+## Why two payloads
 
-```json
-{
-  "schema_version": "1.0",
-  "name": "Web Bible (Smoke)",
-  "package": "org.klappy.appbuilder.smoke",
-  "bible_source": {
-    "kind": "usfm_zip",
-    "url": "https://raw.githubusercontent.com/klappy/appbuilder-mcp/main/fixtures/h009/eng-web_usfm_with_booknames.zip",
-    "sha256": "386e0051dab7239fc5a59400948019a64f0038b3af3d40bb1ace3a73049b829c"
-  }
-}
+`canon/articles/payload-construction.md` documents the schema-floor minimum as `name + package + bible_source` — and that **is** the floor the MCP `submit_build` tool will accept at the validator. But the Container that runs SAB downstream of that validator has its own requirements that aren't expressed in the JSON schema. As of SAB v14.0 build 131 (the bundled image at time of writing), the SAB CLI fails fast with:
+
+```
+Before building the app, please do the following:
+ - Specify an App Icon in the following sizes: 72x72 (hdpi), 144x144 (xxhdpi)
+ - Enter some information for the 'About' page (copyright, contact details, etc.).
 ```
 
-The bible source is the H-009 fixture — a perturbed copy of the SIL eng-web USFM priming bundle with a synthesized `BookNames.xml` at the zip root. See [`fixtures/h009/README.md`](../fixtures/h009/README.md) for provenance, sha256, and the H-009 hypothesis it was built to test.
+…unless the payload also supplies `about_url` + `about_sha256` and at least the two required icon sizes. That's why this directory ships **two** payloads:
 
-This payload is the candidate for the H-002 end-to-end smoke milestone listed in the top-level [`README.md`](../README.md). At time of writing the milestone has not been confirmed `failure_mode: "success"` end-to-end; running `--build` for the first time is itself the milestone exit criterion. If it returns `failure_mode: "soft"` or `"hard"`, see [`canon/articles/failure-mode-taxonomy.md`](../canon/articles/failure-mode-taxonomy.md) for what each mode means and how to drill into it.
+- **`full-payload.json`** — the smallest payload that gets to `failure_mode: "success"`. Default for `--build`.
+- **`minimum-payload.json`** — preserved for testing the validator and for studying what SAB itself complains about when icons + about are missing. Submitting it is harmless: the worker runs SAB, SAB exits 1 in ~4 seconds, the job lands at `failure_mode: "hard"`, and a small log is written to R2. No APK is produced. Useful for confirming the failure-mode-taxonomy article's `hard` description.
+
+Both payloads use the [H-009 fixture](../fixtures/h009/README.md) for `bible_source` (the SIL eng-web USFM bundle perturbed to include a synthesized `BookNames.xml`, which SAB v14.0+ requires for book-collection 1 to populate). The full payload's icons + about come from the [H-010-full fixture](../fixtures/h010-full/README.md). All sha256 values are pinned and verified.
+
+This payload pair is the candidate for the H-002 end-to-end smoke milestone listed in the top-level [`README.md`](../README.md). Running `python3 smoke/quickstart.py --build` against the live deploy was observed in this session producing a successful 13 MB APK in 5m 13s on first run, content-addressed cache hit thereafter.
+
+## Terminal-state detection
+
+`get_job_status` returns two independent terminal signals:
+
+- `state` — `succeeded` | `failed` | `cancelled` (or in-flight: `queued` | `running`)
+- `failure_mode` — `success` | `soft` | `hard` (or `null` while in flight)
+
+On the failed path both flip together. **On the success path the worker has been observed to leave `state="running"` while `failure_mode="success"` and `apk_url` is populated** — a state-machine race between the Worker's submit handler and the Container's terminal callback. Until that's fixed server-side, the polling logic here treats either terminal signal as conclusive: if `failure_mode == "success"`, the build succeeded regardless of whether `state` ever transitions to `succeeded`. Without this, `quickstart.py --build` against a successful build would hang for the full `--poll-seconds` timeout.
 
 ## Pitfalls these scripts absorb (so you don't hit them blindly)
 

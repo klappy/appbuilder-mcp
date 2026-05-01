@@ -47,7 +47,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PAYLOAD_PATH="${PAYLOAD_PATH:-${SCRIPT_DIR}/minimum-payload.json}"
+PAYLOAD_PATH="${PAYLOAD_PATH:-${SCRIPT_DIR}/full-payload.json}"
 ENDPOINT="${BASE_URL%/}/mcp"
 
 # Extract a JSON-RPC `result.content[0].text` (already-parsed JSON if possible)
@@ -67,6 +67,36 @@ if "error" in env:
     sys.exit(3)
 content = env.get("result", {}).get("content", [{}])[0].get("text", "")
 print(content)
+PY
+}
+
+# Non-exiting variant for paths that need to inspect envelope-level errors
+# without `set -e` aborting the script. Emits one of:
+#   ENVELOPE_ERROR:<json-encoded error>
+#   PAYLOAD:<inner result.content[0].text>
+#   PARSE_ERROR:<reason>
+parse_envelope() {
+  EXTRACT_INPUT="$(cat)" python3 - <<'PY'
+import json, os, sys
+text = os.environ["EXTRACT_INPUT"].strip()
+if text.startswith("event:"):
+    for line in text.splitlines():
+        if line.startswith("data: "):
+            text = line[6:]
+            break
+try:
+    env = json.loads(text)
+except json.JSONDecodeError as e:
+    print(f"PARSE_ERROR:{e}")
+    sys.exit(0)
+if isinstance(env, dict) and "error" in env:
+    print(f"ENVELOPE_ERROR:{json.dumps(env['error'])}")
+    sys.exit(0)
+if not isinstance(env, dict) or "result" not in env:
+    print(f"PARSE_ERROR:no result key in envelope: {env!r}")
+    sys.exit(0)
+content = env.get("result", {}).get("content", [{}])[0].get("text", "")
+print(f"PAYLOAD:{content}")
 PY
 }
 
@@ -145,6 +175,12 @@ for t in tools:
 PY
 
 # ---------- Step 4: docs probe (with one retry for cold-start) ----------
+# The deployed worker can surface docs-upstream timeouts in two ways and the
+# retry needs to fire on either:
+#   a) In-payload error — result.content[0].text contains JSON with "error".
+#   b) JSON-RPC envelope error — top-level "error" key, no "result". With
+#      set -euo pipefail this would abort the script before retry, so we use
+#      parse_envelope here instead of extract_text.
 echo "[4/4] tools/call docs(query='payload construction', depth=1)"
 docs_call() {
   local id="$1"
@@ -156,15 +192,51 @@ docs_call() {
     "${ENDPOINT}"
 }
 
-DOCS_RAW=$(docs_call 11)
-DOCS_TEXT=$(echo "${DOCS_RAW}" | extract_text)
-DOCS_ERR=$(extract_field "${DOCS_TEXT}" "error" || echo "")
-if [[ -n "${DOCS_ERR}" && "${DOCS_ERR}" == *"timed out"* ]]; then
-  echo "      cold-start timeout on first call (${DOCS_ERR}); retrying once..."
+probe_docs() {
+  local id="$1"
+  local raw parsed
+  raw=$(docs_call "${id}")
+  parsed=$(echo "${raw}" | parse_envelope)
+  case "${parsed}" in
+    ENVELOPE_ERROR:*)
+      DOCS_ENVELOPE_ERR="${parsed#ENVELOPE_ERROR:}"
+      DOCS_TEXT=""
+      DOCS_ERR=""
+      ;;
+    PARSE_ERROR:*)
+      echo "      docs returned unparseable response: ${parsed#PARSE_ERROR:}" >&2
+      exit 5
+      ;;
+    PAYLOAD:*)
+      DOCS_ENVELOPE_ERR=""
+      DOCS_TEXT="${parsed#PAYLOAD:}"
+      DOCS_ERR=$(extract_field "${DOCS_TEXT}" "error" || echo "")
+      ;;
+    *)
+      echo "      parse_envelope returned unexpected output: ${parsed}" >&2
+      exit 5
+      ;;
+  esac
+}
+
+is_timeout_signal() {
+  local s="$1"
+  [[ -n "${s}" && "${s}" == *"timed out"* ]]
+}
+
+probe_docs 11
+if is_timeout_signal "${DOCS_ENVELOPE_ERR}"; then
+  echo "      cold-start envelope error on first call (${DOCS_ENVELOPE_ERR}); retrying once..."
   sleep 2
-  DOCS_RAW=$(docs_call 12)
-  DOCS_TEXT=$(echo "${DOCS_RAW}" | extract_text)
-  DOCS_ERR=$(extract_field "${DOCS_TEXT}" "error" || echo "")
+  probe_docs 12
+elif is_timeout_signal "${DOCS_ERR}"; then
+  echo "      cold-start in-payload timeout on first call (${DOCS_ERR}); retrying once..."
+  sleep 2
+  probe_docs 12
+fi
+if [[ -n "${DOCS_ENVELOPE_ERR}" ]]; then
+  echo "      docs returned envelope error after retry: ${DOCS_ENVELOPE_ERR}" >&2
+  exit 5
 fi
 if [[ -n "${DOCS_ERR}" ]]; then
   echo "      docs returned error after retry: ${DOCS_ERR}" >&2
@@ -225,7 +297,7 @@ fi
 
 echo
 echo "[BUILD 2/3] polling get_job_status every 5s (timeout ${POLL_SECONDS}s)"
-LAST_STATE=""
+LAST_SIG=""
 DEADLINE=$(( $(date +%s) + POLL_SECONDS ))
 while [[ $(date +%s) -lt ${DEADLINE} ]]; do
   STATUS_RAW=$(curl -fsS -m 30 -A "${USER_AGENT}" \
@@ -236,26 +308,45 @@ while [[ $(date +%s) -lt ${DEADLINE} ]]; do
     "${ENDPOINT}")
   STATUS_TEXT=$(echo "${STATUS_RAW}" | extract_text)
   STATE=$(extract_field "${STATUS_TEXT}" "state")
-  if [[ "${STATE}" != "${LAST_STATE}" ]]; then
-    FAIL_MODE=$(extract_field "${STATUS_TEXT}" "failure_mode" || echo "")
+  FAIL_MODE=$(extract_field "${STATUS_TEXT}" "failure_mode" || echo "")
+  SIG="${STATE}|${FAIL_MODE}"
+  if [[ "${SIG}" != "${LAST_SIG}" ]]; then
     PROGRESS=$(extract_field "${STATUS_TEXT}" "progress" || echo "")
     echo "            state=${STATE}  failure_mode=${FAIL_MODE}  progress=${PROGRESS}"
-    LAST_STATE="${STATE}"
+    LAST_SIG="${SIG}"
   fi
+
+  # Terminal if EITHER signal has fired. The worker has been observed to
+  # leave state="running" while failure_mode="success" on the success path
+  # (a state-machine race with the container's callback). Accept either.
+  IS_TERMINAL=0
   case "${STATE}" in
-    succeeded|failed|cancelled)
-      echo
-      echo "[BUILD 3/3] terminal state=${STATE}"
-      APK_URL=$(extract_field "${STATUS_TEXT}" "apk_url" || echo "")
-      LOG_URL=$(extract_field "${STATUS_TEXT}" "log_url" || echo "")
-      echo "            failure_mode=$(extract_field "${STATUS_TEXT}" "failure_mode")"
-      echo "            apk_url=${APK_URL}"
-      echo "            log_url=${LOG_URL}"
-      [[ "${STATE}" == "succeeded" ]] && exit 0 || exit 1
-      ;;
+    succeeded|failed|cancelled) IS_TERMINAL=1 ;;
   esac
+  case "${FAIL_MODE}" in
+    success|hard|soft) IS_TERMINAL=1 ;;
+  esac
+
+  if [[ "${IS_TERMINAL}" -eq 1 ]]; then
+    echo
+    echo "[BUILD 3/3] terminal state=${STATE}  failure_mode=${FAIL_MODE}"
+    APK_URL=$(extract_field "${STATUS_TEXT}" "apk_url" || echo "")
+    LOG_URL=$(extract_field "${STATUS_TEXT}" "log_url" || echo "")
+    echo "            apk_url=${APK_URL}"
+    echo "            log_url=${LOG_URL}"
+    # Success: failure_mode=success OR state=succeeded (preferring failure_mode
+    # since that's the signal the container writes itself).
+    if [[ "${FAIL_MODE}" == "success" || "${STATE}" == "succeeded" ]]; then
+      exit 0
+    fi
+    if [[ "${FAIL_MODE}" == "hard" || "${FAIL_MODE}" == "soft" || "${STATE}" == "failed" ]]; then
+      exit 1
+    fi
+    # state == "cancelled" or any other terminal-but-not-success outcome
+    exit 1
+  fi
   sleep 5
 done
-echo "            timed out at state=${LAST_STATE} after ${POLL_SECONDS}s"
+echo "            timed out (last signature: ${LAST_SIG}) after ${POLL_SECONDS}s"
 echo "            job_id=${JOB_ID} — re-poll later with get_job_status if you want to keep waiting"
 exit 3

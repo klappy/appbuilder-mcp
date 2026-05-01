@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "name": "Web Bible (Full)",
+  "package": "org.klappy.appbuilder.full",
+  "bible_source": {
+    "kind": "usfm_zip",
+    "url": "https://raw.githubusercontent.com/klappy/appbuilder-mcp/main/fixtures/h009/eng-web_usfm_with_booknames.zip",
+    "sha256": "386e0051dab7239fc5a59400948019a64f0038b3af3d40bb1ace3a73049b829c"
+  },
+  "about_url": "https://raw.githubusercontent.com/klappy/appbuilder-mcp/main/fixtures/h010-full/about.txt",
+  "about_sha256": "2a5ce8b7abfc869673bdf151d58e87d3db03aa1baf03063916c884364f1f0e6b",
+  "icons": [
+    {
+      "filename": "icon-72.png",
+      "url": "https://raw.githubusercontent.com/klappy/appbuilder-mcp/main/fixtures/h010-full/icon-72.png",
+      "sha256": "5404e7f3dc0cdb28ee3e26a38f1d7c1c99c85470c94c1bc0cdcb885e8eb31fdc"
+    },
+    {
+      "filename": "icon-144.png",
+      "url": "https://raw.githubusercontent.com/klappy/appbuilder-mcp/main/fixtures/h010-full/icon-144.png",
+      "sha256": "f3ec21bb8feee0c2df4ae0579d27b19aa1d5e4c37595b692c1476a8a322087d5"
+    }
+  ]
+}
