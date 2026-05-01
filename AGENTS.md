@@ -69,3 +69,19 @@ with that reference implementation.
 
 The autonomous-loop kickoff prompt for parity work lives at
 `docs/agent-handoff-loop.md`. Encoded canon entries live under `canon/`.
+
+## Live Endpoint + Smoke
+
+The deployed worker is at **`https://appbuilder-mcp.klappy.workers.dev`**:
+
+- `GET /health` — quick liveness check (returns service, version, spec, tools list)
+- `POST /mcp` — Streamable-HTTP MCP transport
+- `POST /sse` — legacy SSE transport
+
+End-to-end smoke harnesses live in [`smoke/`](smoke/):
+
+- `smoke/quickstart.py` — Python (stdlib only); runs read-only by default, `--build` to submit a real APK build.
+- `smoke/quickstart.sh` — same flow in `bash + curl`.
+- `smoke/minimum-payload.json` — a copy-pasteable working `submit_build` payload.
+
+Run the read-only probe before doing anything else against the deploy — it confirms the Worker is up, lists the tool surface as the **server** reports it, and exercises the `docs` tool. That's the cheapest way to verify discovery before issuing real builds.

@@ -4,6 +4,17 @@
 > building on Cloudflare Workers + Containers. Modeled on
 > [`klappy/ptxprint-mcp`](https://github.com/klappy/ptxprint-mcp).
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Status: v0.1 deployed](https://img.shields.io/badge/status-v0.1%20deployed-green.svg)]()
+[![Spec: v1.3-draft](https://img.shields.io/badge/spec-v1.3--draft-blueviolet.svg)](canon/specs/appbuilder-mcp-v1-spec.md)
+
+**Live deploy:** `https://appbuilder-mcp.klappy.workers.dev`
+&nbsp;·&nbsp; `/health` returns `{ ok, service, version, spec, tools }`
+&nbsp;·&nbsp; `/mcp` accepts Streamable-HTTP MCP
+&nbsp;·&nbsp; `/sse` accepts legacy SSE.
+
+The current tool surface is whatever the deploy reports; ask the server (`/health` for a summary, MCP `tools/list` for the full schema) rather than trusting any hand-maintained list. README enumerations drift; the deploy is authoritative.
+
 ```
 Agent (Claude Desktop / BT Servant / etc.)
   │
@@ -83,31 +94,48 @@ For maintainers picking up the project:
 2. [`canon/encodings/transcript-encoded-session-1.md`](canon/encodings/transcript-encoded-session-1.md) — the bootstrap session journal.
 3. [`BUILD.md`](BUILD.md) — deployment and operations notes.
 
+## Quickstart for agents
+
+The fastest way from "I just found this repo" to "I have called every tool and watched it work":
+
+```bash
+git clone https://github.com/klappy/appbuilder-mcp.git
+cd appbuilder-mcp
+python3 smoke/quickstart.py            # read-only probe — safe, no build triggered
+python3 smoke/quickstart.py --build    # opt-in: submit a real build, poll until terminal
+```
+
+The script hits `/health`, opens an MCP session over Streamable-HTTP, lists tools as the **server** reports them, exercises the `docs` tool, and (with `--build`) submits the payload in [`smoke/minimum-payload.json`](smoke/minimum-payload.json). A bash + curl version lives at [`smoke/quickstart.sh`](smoke/quickstart.sh). See [`smoke/README.md`](smoke/README.md) for the full layout.
+
+If you are wiring up an MCP-aware agent (Claude Desktop, BT Servant, etc.), point its MCP client at `https://appbuilder-mcp.klappy.workers.dev/mcp` (Streamable-HTTP) or `/sse` (legacy SSE). Then ask the deploy's `docs` tool what it knows:
+
+```text
+docs(query="payload construction", depth=2)
+docs(query="failure mode taxonomy", depth=2)
+docs(query="bundled debug keystore", depth=2)
+```
+
+The README does not list every available canon article — that catalog grows over time, and a hand-maintained list would lie in wait. The discovery surface is the tool; the filesystem under [`canon/articles/`](canon/articles/) is authoritative.
+
+## Common pitfalls
+
+These are absorbed by `smoke/quickstart.{py,sh}` but worth knowing if you write your own client:
+
+- **Cloudflare's edge rejects the default `urllib`/`wget` User-Agent with HTTP 403.** Set a project-specific `User-Agent` header on every request.
+- **Streamable-HTTP MCP returns SSE frames, not bare JSON.** Bodies look like `event: message\ndata: {...}\n\n`. Strip the `data: ` prefix before parsing.
+- **`mcp-session-id` is required on every request after `initialize`.** Capture it from the `initialize` response headers and pass it back as a request header.
+- **Don't skip `notifications/initialized`** between `initialize` and the first `tools/call`. The spec requires it.
+- **The `docs` tool's first call after a Worker cold-start can time out** with `MCP error -32001: Request timed out` at the upstream-oddkit hop. Retry once after a short pause; subsequent calls in the same session are fast.
+- **A job sitting at `state="queued"` for >30s after `submit_build`** likely means the Container hasn't picked it up yet. The Worker writes a "Worker: about to dispatch container.fetch" breadcrumb to JobStateDO before the dispatch — `get_job_status` reflects it. See [`canon/articles/diagnostic-patterns.md`](canon/articles/diagnostic-patterns.md) for the full instrumentation.
+- **Same payload → same `job_id` (cache hit).** This is by design; the server is content-addressed. Re-submitting an identical payload returns the cached APK URL with no Container run.
+
 ## Status
 
-**v0.1 — initial scaffold deployed via Workers Builds (sessions 1–3); session 4 pinned the burrito-capable image (closes H-001) and the next push triggers the deploy.** The bootstrap session journals at
-`canon/encodings/transcript-encoded-session-{1,2,3,4}.md` carry the full
-audit trail. Active milestones:
+**v0.1 deployed.** Worker, three Durable Object classes, and the burrito-pinned Container image are live at `https://appbuilder-mcp.klappy.workers.dev`. The bootstrap-session journals at [`canon/encodings/`](canon/encodings/) carry the full audit trail. Currently in flight (live tracker: [`docs/parity-matrix.md`](docs/parity-matrix.md), [`docs/work-log.md`](docs/work-log.md)):
 
-- **H-002** — first end-to-end smoke build using the canonical
-  `eng-web_usfm.zip` fixture; verify `failure_mode: "success"` then
-  resubmit byte-identical to confirm cache hit.
-- **H-006** — observe the Workers Builds deploy of the burrito-pinned
-  image; `/health` should remain 200 and a smoke job dispatched to the
-  Container should pull
-  `ghcr.io/sillsdev/appbuilder-agent-stg:feature-scripture-burrito`
-  (1.7 GiB, single amd64 manifest).
-- **H-003** — telemetry-governance fresh-context review per
-  `klappy://canon/principles/verification-requires-fresh-context`
-  (`canon/governance/telemetry-governance.md` carries
-  `status: draft_pending_fresh_review`).
-- **Open-006** — image disk-margin observation on the Container
-  (`standard-3` ships with 20 GiB; first cold Gradle cache build is the
-  worst case).
-- **Open-007** — promote the stg feature branch to a stable
-  `appbuilder-agent-prd:<tag>` once the upstream PR merges.
-- **Open-008** — single-platform amd64 manifest; observe whether
-  upstream adds arm64 later.
+- **H-002 / H-006** — first end-to-end smoke build using the eng-web USFM fixture (or H-009 perturbation); observe the burrito-pinned image being pulled (~1.7 GiB single amd64 manifest); confirm `failure_mode: "success"`; resubmit byte-identical to confirm cache hit. Running `smoke/quickstart.py --build` exercises this path.
+- **H-003** — telemetry-governance fresh-context review per [`klappy://canon/principles/verification-requires-fresh-context`](https://raw.githubusercontent.com/klappy/klappy.dev/main/canon/principles/verification-requires-fresh-context.md).
+- **Open-006/-007/-008** — Container disk-margin observation, `appbuilder-agent-prd:<tag>` promotion, and arm64 manifest watch.
 
 ## License
 
