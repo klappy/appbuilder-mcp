@@ -433,3 +433,59 @@ This is an Open and not a D because the right place to land these edits is after
 - **Open**: Open-005 (closed s3), Open-006 (active), Open-007 (active), Open-008 (active), Open-009 (active), Open-010 (closed s6), Open-011 (active), Open-012 (active), Open-013 (active), Open-014 (new s7 cont., active)
 
 Session 8 continues at D-020, O-026, L-018, C-010, H-011, Open-015 if new items emerge.
+
+---
+
+## Continuation 2 — 2026-05-01T01:55Z H-010a result + pivot to container changes
+
+The operator authorized testing all three H-010 sub-letters in sequence. H-010a was the first cheap test; its result reframes the entire problem and motivates b/c immediately.
+
+### O-026 — H-010a CONFIRMED: DBL bundles populate book collection 1 under `-new`
+
+**Setup.** Identical to the H-009 smoke, with two changes:
+- Fixture: `eng-bsb_usx.zip` (sha256 `37346add4e231de9ef24994d7e62c124f568e0784b1a76e82f359f7d69110236`), mirrored to `fixtures/h010a/` from `sillsdev/docker-appbuilder-agent`. A proper DBL Text Release Bundle (metadata.xml + release/USX_1/*.usx + release/styles.xml + release/versification.vrs + release/eng_en.ldml).
+- Payload `bible_source.kind`: `"usx_zip"` instead of `"usfm_zip"`.
+
+**Result.** State `failed`, exit_code 1, 4-second wall clock — same operational shape as H-009. **But the failure message is different:**
+
+```
+Before building the app, please do the following:
+
+ - Specify an App Icon in the following sizes: 72x72 (hdpi), 144x144 (xxhdpi)
+ - Enter some information for the 'About' page (copyright, contact details, etc.).
+```
+
+Compare to the H-009 (eng-web USFM) terminal log, which had three complaints:
+
+```
+ - Specify an App Icon in the following sizes: 72x72 (hdpi), 144x144 (xxhdpi)
+ - Enter some information for the 'About' page (copyright, contact details, etc.).
+ - Add one or more books for book collection 1.    ← THIS IS GONE WITH DBL
+```
+
+**The "book collection 1" complaint is absent in H-010a.** The remaining complaints (icon, about) are deterministic consequences of submitting the minimum payload with no `icons` and no `about_url` — independent of the bundle format. Add icons + an about file and SAB will produce a real APK from this DBL bundle. (Not tested in this session because the H-010 question was about the bundle, not the optional fields; the next session can confirm the full-payload smoke if useful, but the inference is unambiguous.)
+
+**Closure.** H-010a hypothesis confirmed:
+
+> SAB v14.0 build 129 successfully populates book collection 1 from a DBL Text Release Bundle (input shape: `metadata.xml` + `release/USX_1/<BOOK>.usx` + supporting locale/style/versification files). It does NOT populate book collection 1 from a raw USFM zip — with or without a generated `BookNames.xml` (per H-009 evidence).
+
+The discriminator is the bundle structure, not the marker presence. PDF §4.8 documents `BookNames.xml` and `\toc` markers as the book-name source — but in build 129, *book-name resolution* and *book-collection population* are different concerns. SAB needs the DBL bundle's `metadata.xml`-based structure (or the equivalent `.appDef` project structure) to register books with collection 1 at all.
+
+Smoke evidence:
+- job_id: `4f3c85f9f8959056bc132a59cdd53d10f1650389c7183607b6b2b1a62525899a`
+- log_url: `https://appbuilder-mcp.klappy.workers.dev/r2/outputs/4f3c85f9f8959056bc132a59cdd53d10f1650389c7183607b6b2b1a62525899a/org.berean.bsb.s7h010a_BSB_DBL_s7_H-010a_appbuilder.log`
+- fixture commit: `d4ba89b`
+
+### What this means for the v0.x agent contract
+
+Right now, a caller submitting `kind: "usfm_zip"` will hit the H-009 wall regardless of bundle quality. A caller submitting `kind: "usx_zip"` with a real DBL bundle, plus icons + about, will get a real APK in the next attempt. The agent contract is therefore **partially working**: USX/DBL inputs are buildable; USFM inputs are not.
+
+This is also (incidentally) the answer to a question H-008 was framed to ask Chris. We now have a useful response to upstream rather than a vague request: "Confirmed — DBL bundles build cleanly with `-new -b`; raw USFM zips don't even with proper toc fields. Is this an intentional change in build 129's USFM handling, or something else we're missing on the USFM path?"
+
+### D-020 — Operator authorized H-010b + H-010c → container scope opens
+
+The session-7 scope guard ("do not modify container/, src/, Dockerfile, or wrangler") was lifted by the operator's explicit "do a then b and c" instruction after H-010a confirmed. Per `klappy://canon/principles/contract-governs-handoff-drift`, when a session ledger changes scope, the change is recorded explicitly and not assumed.
+
+D-020 records: container modifications are now in scope for the H-010b and H-010c tests in this session.
+
+The *spirit* of the original scope guard remains: each modification should be (a) the smallest change that tests its hypothesis cleanly, (b) reversible if the test fails, (c) committed in a separate commit from the test result for clean attribution. Path #1 (the dread "container change without empirical confirmation first") is no longer the failure mode — H-009 and H-010a have already done the empirical heavy lifting.
