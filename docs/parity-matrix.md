@@ -91,7 +91,7 @@ This is the most visible parity dimension — what an MCP client sees on `tools/
 | `npm test` script | `vitest run` | `vitest run` | none (script wired) | n/a | closed |
 | `test/` directory | 3 files: `telemetry-schema.test.ts`, `snapshot.test.ts`, `telemetry.test.ts` | **absent (zero tests)** | `npm test` is currently a no-op against zero specs; coverage = 0 | P1 | in_review (P1.1; `feat/test-infra-payload`) |
 | Schema-pinning tests (positions are forever) | covered in `telemetry-schema.test.ts` | absent | coupled to telemetry-schema.ts module gap | P1 | open |
-| Telemetry unit tests (privacy-floor, three-tier fallback, rate-limit, dataset-allowlist) | covered in `telemetry.test.ts` | absent | the v1 spec §6 DoD items have no test pinning | P1 | open |
+| Telemetry unit tests (privacy-floor, three-tier fallback, rate-limit, dataset-allowlist) | covered in `telemetry.test.ts` | absent | the v1 spec §6 DoD items have no test pinning | P1 | in_review (P1.7; `feat/telemetry-tests`) |
 | Snapshot tests (idempotency, week boundaries, JSONL round-trip, merge) | covered in `snapshot.test.ts` | absent | coupled to snapshot.ts module gap | P2 | open |
 
 **Practical impact:** zero test coverage means no signal that telemetry, payload validation, or any future feature regresses. Smallest meaningful first commit on this dimension is one test that exercises payload validation against a fixture — anything is better than zero.

@@ -20,6 +20,54 @@ derives_from: "docs/agent-prompts/02-build-session.md §Per-gap loop step 5, doc
 
 ---
 
+## 2026-05-01T11:42Z — P1.7: Author `test/telemetry.test.ts`
+
+- **Branch:** `feat/telemetry-tests` (branched from `origin/main` after PR #6 merge).
+- **PR:** _to be appended once opened_
+- **Spec criteria (§3 P1.7):** test file exists; ≥1 test per spec §6 DoD
+  item (privacy floor, three-tier fallback, rate-limit, dataset-allowlist);
+  each test pins the named DoD item with a comment quoting the spec line;
+  `npm test` reports the new tests passing.
+- **Files added/modified:**
+  - `test/telemetry.test.ts` — **new**, 21 tests across five describe
+    blocks: privacy floor (5), three-tier fallback (4), rate-limit (3),
+    dataset-allowlist (7), forwardTelemetryQuery guard composition (2).
+  - `docs/parity-matrix.md` — §3 Telemetry unit tests row → in_review.
+- **Verification:**
+  - `npm test` → `Test Files 2 passed (2) / Tests 34 passed (34)` (13
+    payload from merged P1.1 + 21 new telemetry tests).
+  - `npm run tsc` → clean exit.
+- **Assumptions made (no operator):**
+  - The v1 spec §6 mostly references ptxprint-mcp v1.3 §6 verbatim and
+    documents the SAB-specific blob/double slot rebinding. The four
+    operational DoD items (privacy floor, three-tier fallback, rate
+    limit, dataset allowlist) live in the matrix §3 row text and the
+    telemetry-governance canon doc; each describe block names which DoD
+    item it pins and quotes the canonical phrasing.
+  - Used `vi.fn()` for `globalThis.fetch` to test the three-tier
+    knowledge_base path without making real network calls. Original
+    `fetch` is restored in `afterEach` so the test isolates one request
+    pattern at a time.
+  - The forwardTelemetryQuery rate-limit test uses a 1/hr ceiling so the
+    second call exceeds without making a real fetch; this is the
+    cheapest way to assert the rate-limit guard fires before the
+    network attempt.
+- **Risks for the validator:**
+  - The dataset-allowlist test "does not let comments smuggle in another
+    dataset reference" verifies the current behavior: block-comment FROM
+    is stripped, leaving no FROM in the residual query, which the
+    detector rejects. If a future allowlist change accepts queries with
+    no FROM, that test would flip — the desired behavior is "always
+    require FROM appbuilder_telemetry," and the test pins that
+    invariant.
+  - `forwardTelemetryQuery` rate-limit test relies on the in-memory
+    rate-limit map being shared across calls; `resetRateLimiter` is
+    called in `beforeEach` so suites are independent. If the rate
+    limiter ever moves to KV / DO, this test will need a different
+    setup.
+
+---
+
 ## 2026-05-01T11:42Z — P1.6: Author DEPLOY.md
 
 - **Branch:** `feat/deploy-md` (branched from `origin/main` after PR #6 merge).
