@@ -189,11 +189,13 @@ const FIELD_LOOKUP: Record<string, string> = Object.fromEntries(
   ALL_FIELD_NAMES.map(({ name, col }) => [name, col]),
 );
 
-/** Substitute every `\bname\b` with its positional column ref. No aliasing. */
+/** Substitute every `\bname\b` with its positional column ref. No aliasing.
+ *  Skips matches immediately followed by `(`, which are SQL function calls
+ *  (e.g. lowercase `count(*)`) rather than references to the schema field. */
 function substituteFieldsToCol(text: string): string {
   let result = text;
   for (const { name, col } of ALL_FIELD_NAMES) {
-    result = result.replace(new RegExp(`\\b${name}\\b`, "g"), col);
+    result = result.replace(new RegExp(`\\b${name}\\b(?!\\s*\\()`, "g"), col);
   }
   return result;
 }
