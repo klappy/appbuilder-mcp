@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "name": "Web Bible (Smoke)",
+  "package": "org.klappy.appbuilder.smoke",
+  "bible_source": {
+    "kind": "usfm_zip",
+    "url": "https://raw.githubusercontent.com/klappy/appbuilder-mcp/main/fixtures/h009/eng-web_usfm_with_booknames.zip",
+    "sha256": "386e0051dab7239fc5a59400948019a64f0038b3af3d40bb1ace3a73049b829c"
+  }
+}
