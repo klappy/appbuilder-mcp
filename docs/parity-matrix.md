@@ -216,6 +216,16 @@ Of the 17 articles in ptxprint-mcp not present in appbuilder-mcp, **classificati
 
 **Articles unique to appbuilder-mcp (correctly SAB-specific, not gaps in either direction):** `apk-installation.md`, `book-collections.md`, `bundled-debug-keystore.md`, `keystore-reuse.md`. These are appbuilder's domain-specific canon and should not be backported.
 
+### 9.2.1 Agent-orientation coverage (joint deficiency, closed appbuilder-first)
+
+A coverage gap not previously tracked: an MCP-only agent — one connecting to the deployed Worker without cloning the repo — has no canon path for first-day orientation queries. Direct probe of the live `docs` tool against questions like "what is appbuilder-mcp", "quickstart", "what is the relationship to oddkit", and "how is canon organized" returned irrelevant SAB-domain articles (book collections, bundled keystore, failure modes). The repo's `AGENTS.md`, `README.md`, and `smoke/README.md` cover this content for cloned-repo readers, but the deploy is the product and `docs` indexes only `canon/`.
+
+| ptxprint-mcp | appbuilder-mcp | gap | priority | status |
+|---|---|---|---|---|
+| no `articles/agent-quickstart.md` (joint deficiency) | `articles/agent-quickstart.md` (this PR) | orient an MCP-only agent: tool surface, discovery loop, relationship to oddkit and ptxprint-mcp, where to ask follow-ups | P2 | closed (`feat/agent-quickstart-canon`) |
+
+Closing this gap appbuilder-first is acceptable per the §3.1 P3 entry on `scripts/e2e-walkthrough.sh` ("a `scripts/e2e-walkthrough.sh` would close this for both repos; doing it appbuilder-first is acceptable"). Mirroring this article into ptxprint-mcp is a follow-on.
+
 ### 9.3 Governance
 
 | ptxprint-mcp | appbuilder-mcp | gap | priority | status |
