@@ -51,6 +51,13 @@ import {
 import { fetchDocs } from "./docs.js";
 import { BUNDLED_POLICY } from "./bundled-policy.js";
 import {
+  runSnapshot,
+  weekStartFor,
+  addDays,
+  type SnapshotEnv,
+} from "./snapshot.js";
+import { handleSnapshotRun } from "./snapshot-route.js";
+import {
   writeTelemetry,
   resolveConsumer,
   redactAndValidate,
@@ -83,6 +90,9 @@ interface Env {
   CF_ACCOUNT_ID: string;
   CF_API_TOKEN: string;
   TELEMETRY_QUERY_RATE_LIMIT_PER_HOUR: string;
+  // Track A snapshot bindings (P2.8/P2.9/P2.10)
+  TELEMETRY_SNAPSHOTS: R2Bucket;
+  SNAPSHOT_BOOTSTRAP_TOKEN?: string;
 }
 
 // ---------- Helpers ----------
@@ -558,6 +568,19 @@ export default {
       return Response.json({ ok: true });
     }
 
+    // POST /internal/snapshot/run — Track A bootstrap path. Gated by
+    // SNAPSHOT_BOOTSTRAP_TOKEN secret. The scheduled handler below is the
+    // steady-state path. Implementation in src/snapshot-route.ts so it
+    // stays unit-testable without pulling in the cloudflare:* imports.
+    // Authority: docs/parity-spec.md §4 P2.10.
+    {
+      const snapshotResponse = await handleSnapshotRun(
+        req,
+        env as unknown as { SNAPSHOT_BOOTSTRAP_TOKEN?: string } & SnapshotEnv,
+      );
+      if (snapshotResponse) return snapshotResponse;
+    }
+
     // Internal: container polls for cancellation status.
     if (req.method === "GET" && url.pathname === "/internal/job-cancel-flag") {
       const jobId = url.searchParams.get("job_id");
@@ -636,6 +659,30 @@ export default {
     }
 
     return new Response("not found", { status: 404 });
+  },
+
+  /**
+   * Weekly cron — wrangler.jsonc declares `triggers.crons: ["0 0 * * 1"]`
+   * (Mondays 00:00 UTC). Snapshots the most recently completed week. The
+   * 90-day Analytics Engine retention window provides ~12 weeks of
+   * catch-up if the cron ever misses; runSnapshot is idempotent so a
+   * skipped week's data is recoverable via the POST
+   * /internal/snapshot/run bootstrap path.
+   *
+   * Authority: docs/parity-spec.md §4 P2.9; src/snapshot.ts §runSnapshot.
+   */
+  async scheduled(
+    _controller: ScheduledController,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    const now = new Date();
+    const previousWeekStart = addDays(weekStartFor(now), -7);
+    ctx.waitUntil(
+      runSnapshot(env as unknown as SnapshotEnv, previousWeekStart).then(
+        () => undefined,
+      ),
+    );
   },
 };
 

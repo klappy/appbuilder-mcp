@@ -45,8 +45,25 @@
       "bucket_name": "appbuilder-outputs"
       // Lifecycle policy: configure 90-day retention in the CF dashboard or via
       // `wrangler r2 bucket lifecycle add` after first deploy.
+    },
+    {
+      "binding": "TELEMETRY_SNAPSHOTS",
+      "bucket_name": "appbuilder-telemetry-snapshots"
+      // Track A weekly snapshots (per src/snapshot.ts METRICS).
+      // Long retention (no lifecycle expiry) — these are the lifetime archive
+      // past Analytics Engine's 90-day retention window.
+      // Authority: klappy://canon/articles/hero-metrics-and-storytelling.
     }
   ],
+
+  // Weekly cron — Mondays 00:00 UTC. The scheduled handler runs the snapshot
+  // for the most recently completed week. The 90-day Analytics Engine retention
+  // window provides ~12 weeks of catch-up capacity if the cron ever misses.
+  // Authority: src/snapshot.ts §runSnapshot;
+  // klappy://canon/articles/snapshot-operations.
+  "triggers": {
+    "crons": ["0 0 * * 1"]
+  },
 
   // Container declaration — the image is built from ./Dockerfile during `wrangler deploy`.
   // standard-3 = 1/2 vCPU, 12 GiB memory, 20 GB disk — chosen because the SAB
@@ -90,7 +107,8 @@
   }
 
   // Secrets (set via `wrangler secret put` — NOT committed to source):
-  //   CF_ACCOUNT_ID               — Cloudflare account ID (used by telemetry_public)
-  //   CF_API_TOKEN                — read-only AE query token (used by telemetry_public)
+  //   CF_ACCOUNT_ID               — Cloudflare account ID (used by telemetry_public + snapshot AE queries)
+  //   CF_API_TOKEN                — read-only AE query token (used by telemetry_public + snapshot AE queries)
   //   TELEMETRY_VERIFIED_CLIENTS  — optional comma-separated consumer label allowlist
+  //   SNAPSHOT_BOOTSTRAP_TOKEN    — required for POST /internal/snapshot/run (one-off backfill)
 }
