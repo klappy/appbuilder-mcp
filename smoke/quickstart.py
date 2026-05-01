@@ -213,6 +213,17 @@ def step_docs_probe(session: McpSession) -> None:
         envelope = session.tools_call(
             "docs", {"query": query, "depth": 1}, request_id=10 + attempt, timeout=45.0
         )
+        rpc_err = envelope.get("error") if isinstance(envelope, dict) else None
+        if rpc_err:
+            err_msg = rpc_err.get("message", "") if isinstance(rpc_err, dict) else str(rpc_err)
+            if "timed out" in err_msg.lower() and attempt == 1:
+                last_err = err_msg
+                print(f"      cold-start timeout on first call ({err_msg!r}); retrying once...")
+                time.sleep(2)
+                continue
+            raise RuntimeError(f"docs tool failed: {rpc_err!r}")
+        if not envelope or "result" not in envelope:
+            raise RuntimeError(f"docs tool returned unexpected envelope: {envelope!r}")
         text = envelope["result"]["content"][0]["text"]
         try:
             payload = json.loads(text)

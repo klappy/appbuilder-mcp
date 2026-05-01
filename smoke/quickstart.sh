@@ -156,15 +156,33 @@ docs_call() {
     "${ENDPOINT}"
 }
 
-DOCS_RAW=$(docs_call 11)
-DOCS_TEXT=$(echo "${DOCS_RAW}" | extract_text)
-DOCS_ERR=$(extract_field "${DOCS_TEXT}" "error" || echo "")
+# `extract_text` exits 3 on JSON-RPC errors (e.g. cold-start
+# `MCP error -32001: Request timed out`) and prints the error JSON to stderr;
+# capture both so we can detect timeouts and retry instead of letting
+# `set -euo pipefail` kill the script before the retry block runs.
+docs_attempt() {
+  local id="$1" raw text err_json err_msg rc
+  raw=$(docs_call "${id}")
+  set +e
+  err_json=$(echo "${raw}" | extract_text 2>&1 1>/tmp/docs_text.$$)
+  rc=$?
+  set -e
+  text=$(cat /tmp/docs_text.$$); rm -f /tmp/docs_text.$$
+  if [[ ${rc} -ne 0 ]]; then
+    err_msg=$(EXTRACT_JSON="${err_json}" python3 -c 'import json,os; e=json.loads(os.environ["EXTRACT_JSON"]); print(e.get("message","") if isinstance(e,dict) else str(e))')
+    DOCS_TEXT=""
+    DOCS_ERR="${err_msg}"
+  else
+    DOCS_TEXT="${text}"
+    DOCS_ERR=$(extract_field "${text}" "error" || echo "")
+  fi
+}
+
+docs_attempt 11
 if [[ -n "${DOCS_ERR}" && "${DOCS_ERR}" == *"timed out"* ]]; then
   echo "      cold-start timeout on first call (${DOCS_ERR}); retrying once..."
   sleep 2
-  DOCS_RAW=$(docs_call 12)
-  DOCS_TEXT=$(echo "${DOCS_RAW}" | extract_text)
-  DOCS_ERR=$(extract_field "${DOCS_TEXT}" "error" || echo "")
+  docs_attempt 12
 fi
 if [[ -n "${DOCS_ERR}" ]]; then
   echo "      docs returned error after retry: ${DOCS_ERR}" >&2
