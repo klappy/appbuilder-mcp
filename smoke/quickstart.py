@@ -205,14 +205,57 @@ def step_tools_list(session: McpSession) -> list[dict]:
 
 
 def step_docs_probe(session: McpSession) -> None:
-    """Call docs() with one retry to absorb cold-start timeouts."""
+    """Call docs() with one retry to absorb cold-start timeouts.
+
+    The deployed worker surfaces docs-upstream timeouts in two distinct ways
+    and the retry needs to fire on either:
+
+      a) In-payload error — the canonical case, observed in practice. The
+         tool returns 200 OK with `result.content[0].text` containing JSON
+         like `{"error": "MCP error -32001: Request timed out", ...}`.
+      b) JSON-RPC envelope error — defensive case. The server could (per
+         spec) return `{"error": {"code": -32001, "message": "..."}}` at
+         the envelope level, with no `result` key. Indexing into
+         `envelope["result"]` raises KeyError before the retry check runs.
+
+    Bugbot caught (b) on PR #18; this handler addresses both.
+    """
     query = "payload construction"
     print(f"[4/4] tools/call docs(query={query!r}, depth=1)")
     last_err: Optional[str] = None
     for attempt in (1, 2):
-        envelope = session.tools_call(
-            "docs", {"query": query, "depth": 1}, request_id=10 + attempt, timeout=45.0
-        )
+        try:
+            envelope = session.tools_call(
+                "docs",
+                {"query": query, "depth": 1},
+                request_id=10 + attempt,
+                timeout=45.0,
+            )
+        except Exception as e:
+            # transport-level failure (HTTP error, connection drop, etc.)
+            err_str = str(e)
+            if "timed out" in err_str.lower() and attempt == 1:
+                last_err = err_str
+                print(f"      cold-start transport timeout on first call ({err_str!r}); retrying once...")
+                time.sleep(2)
+                continue
+            raise
+
+        # Envelope-level JSON-RPC error: {"error": {"code": ..., "message": ...}}
+        env_err = envelope.get("error") if isinstance(envelope, dict) else None
+        if env_err:
+            msg = env_err.get("message", "") if isinstance(env_err, dict) else str(env_err)
+            if "timed out" in msg.lower() and attempt == 1:
+                last_err = msg
+                print(f"      cold-start envelope error on first call ({msg!r}); retrying once...")
+                time.sleep(2)
+                continue
+            raise RuntimeError(f"docs tool returned JSON-RPC error: {env_err}")
+
+        if not isinstance(envelope, dict) or "result" not in envelope:
+            raise RuntimeError(f"docs tool returned unexpected envelope: {envelope!r}")
+
+        # In-payload error: result.content[0].text contains JSON with "error".
         text = envelope["result"]["content"][0]["text"]
         try:
             payload = json.loads(text)
@@ -221,7 +264,7 @@ def step_docs_probe(session: McpSession) -> None:
         err = payload.get("error")
         if err and "timed out" in err.lower() and attempt == 1:
             last_err = err
-            print(f"      cold-start timeout on first call ({err!r}); retrying once...")
+            print(f"      cold-start in-payload timeout on first call ({err!r}); retrying once...")
             time.sleep(2)
             continue
         if err:
