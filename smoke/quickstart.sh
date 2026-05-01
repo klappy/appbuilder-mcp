@@ -47,7 +47,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PAYLOAD_PATH="${PAYLOAD_PATH:-${SCRIPT_DIR}/minimum-payload.json}"
+PAYLOAD_PATH="${PAYLOAD_PATH:-${SCRIPT_DIR}/full-payload.json}"
 ENDPOINT="${BASE_URL%/}/mcp"
 
 # Extract a JSON-RPC `result.content[0].text` (already-parsed JSON if possible)
@@ -225,7 +225,7 @@ fi
 
 echo
 echo "[BUILD 2/3] polling get_job_status every 5s (timeout ${POLL_SECONDS}s)"
-LAST_STATE=""
+LAST_SIG=""
 DEADLINE=$(( $(date +%s) + POLL_SECONDS ))
 while [[ $(date +%s) -lt ${DEADLINE} ]]; do
   STATUS_RAW=$(curl -fsS -m 30 -A "${USER_AGENT}" \
@@ -236,26 +236,45 @@ while [[ $(date +%s) -lt ${DEADLINE} ]]; do
     "${ENDPOINT}")
   STATUS_TEXT=$(echo "${STATUS_RAW}" | extract_text)
   STATE=$(extract_field "${STATUS_TEXT}" "state")
-  if [[ "${STATE}" != "${LAST_STATE}" ]]; then
-    FAIL_MODE=$(extract_field "${STATUS_TEXT}" "failure_mode" || echo "")
+  FAIL_MODE=$(extract_field "${STATUS_TEXT}" "failure_mode" || echo "")
+  SIG="${STATE}|${FAIL_MODE}"
+  if [[ "${SIG}" != "${LAST_SIG}" ]]; then
     PROGRESS=$(extract_field "${STATUS_TEXT}" "progress" || echo "")
     echo "            state=${STATE}  failure_mode=${FAIL_MODE}  progress=${PROGRESS}"
-    LAST_STATE="${STATE}"
+    LAST_SIG="${SIG}"
   fi
+
+  # Terminal if EITHER signal has fired. The worker has been observed to
+  # leave state="running" while failure_mode="success" on the success path
+  # (a state-machine race with the container's callback). Accept either.
+  IS_TERMINAL=0
   case "${STATE}" in
-    succeeded|failed|cancelled)
-      echo
-      echo "[BUILD 3/3] terminal state=${STATE}"
-      APK_URL=$(extract_field "${STATUS_TEXT}" "apk_url" || echo "")
-      LOG_URL=$(extract_field "${STATUS_TEXT}" "log_url" || echo "")
-      echo "            failure_mode=$(extract_field "${STATUS_TEXT}" "failure_mode")"
-      echo "            apk_url=${APK_URL}"
-      echo "            log_url=${LOG_URL}"
-      [[ "${STATE}" == "succeeded" ]] && exit 0 || exit 1
-      ;;
+    succeeded|failed|cancelled) IS_TERMINAL=1 ;;
   esac
+  case "${FAIL_MODE}" in
+    success|hard|soft) IS_TERMINAL=1 ;;
+  esac
+
+  if [[ "${IS_TERMINAL}" -eq 1 ]]; then
+    echo
+    echo "[BUILD 3/3] terminal state=${STATE}  failure_mode=${FAIL_MODE}"
+    APK_URL=$(extract_field "${STATUS_TEXT}" "apk_url" || echo "")
+    LOG_URL=$(extract_field "${STATUS_TEXT}" "log_url" || echo "")
+    echo "            apk_url=${APK_URL}"
+    echo "            log_url=${LOG_URL}"
+    # Success: failure_mode=success OR state=succeeded (preferring failure_mode
+    # since that's the signal the container writes itself).
+    if [[ "${FAIL_MODE}" == "success" || "${STATE}" == "succeeded" ]]; then
+      exit 0
+    fi
+    if [[ "${FAIL_MODE}" == "hard" || "${FAIL_MODE}" == "soft" || "${STATE}" == "failed" ]]; then
+      exit 1
+    fi
+    # state == "cancelled" or any other terminal-but-not-success outcome
+    exit 1
+  fi
   sleep 5
 done
-echo "            timed out at state=${LAST_STATE} after ${POLL_SECONDS}s"
+echo "            timed out (last signature: ${LAST_SIG}) after ${POLL_SECONDS}s"
 echo "            job_id=${JOB_ID} — re-poll later with get_job_status if you want to keep waiting"
 exit 3

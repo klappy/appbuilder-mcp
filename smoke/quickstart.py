@@ -239,8 +239,27 @@ def step_docs_probe(session: McpSession) -> None:
 # ---------- Build flow (--build only) ----------
 
 
-def _terminal(state: str) -> bool:
-    return state in {"succeeded", "failed", "cancelled"}
+_TERMINAL_STATES = {"succeeded", "failed", "cancelled"}
+_TERMINAL_FAILURE_MODES = {"success", "soft", "hard"}
+
+
+def _is_terminal(state_payload: dict) -> bool:
+    """A job is terminal if either signal has fired.
+
+    The worker writes two independent terminal signals into JobStateDO:
+      - `state` ∈ {succeeded, failed, cancelled}
+      - `failure_mode` ∈ {success, soft, hard}
+
+    On the failed path, both flip together. On the success path the worker
+    has been observed to leave `state="running"` while `failure_mode="success"`
+    and `apk_url` are populated (a state-machine race between the worker's
+    submit handler and the container's callback). Until that bug is fixed
+    server-side, accept either signal as terminal here so the smoke doesn't
+    hang on a successful build.
+    """
+    state = (state_payload.get("state") or "").lower()
+    fmode = (state_payload.get("failure_mode") or "").lower()
+    return state in _TERMINAL_STATES or fmode in _TERMINAL_FAILURE_MODES
 
 
 def step_build(session: McpSession, payload_path: str, poll_seconds: int) -> int:
@@ -266,19 +285,20 @@ def step_build(session: McpSession, payload_path: str, poll_seconds: int) -> int
 
     print(f"\n[BUILD 2/3] polling get_job_status every 5s (timeout {poll_seconds}s)")
     deadline = time.time() + poll_seconds
-    last_state: Optional[str] = None
+    last_signature: Optional[tuple[Optional[str], Optional[str]]] = None
     while time.time() < deadline:
         envelope = session.tools_call(
             "get_job_status", {"job_id": job_id}, request_id=21, timeout=30.0
         )
         state_payload = json.loads(envelope["result"]["content"][0]["text"])
         state = state_payload.get("state")
-        if state != last_state:
-            print(f"            state={state}  failure_mode={state_payload.get('failure_mode')}  progress={state_payload.get('progress')}")
-            last_state = state
-        if _terminal(state or ""):
-            print(f"\n[BUILD 3/3] terminal state={state}")
-            print(f"            failure_mode={state_payload.get('failure_mode')}")
+        fmode = state_payload.get("failure_mode")
+        signature = (state, fmode)
+        if signature != last_signature:
+            print(f"            state={state}  failure_mode={fmode}  progress={state_payload.get('progress')}")
+            last_signature = signature
+        if _is_terminal(state_payload):
+            print(f"\n[BUILD 3/3] terminal state={state}  failure_mode={fmode}")
             print(f"            apk_url={state_payload.get('apk_url')}")
             print(f"            log_url={state_payload.get('log_url')}")
             errors = state_payload.get("errors") or []
@@ -286,9 +306,18 @@ def step_build(session: McpSession, payload_path: str, poll_seconds: int) -> int
                 print(f"            errors:")
                 for e in errors[:5]:
                     print(f"              - {e}")
-            return 0 if state == "succeeded" else 1
+            # Success is signalled by failure_mode == "success" OR state == "succeeded".
+            # On the worker's success path, state may stay at "running" while
+            # failure_mode == "success" and apk_url is populated; treat that as
+            # a successful build.
+            if fmode == "success" or state == "succeeded":
+                return 0
+            if fmode in {"hard", "soft"} or state == "failed":
+                return 1
+            # state == "cancelled" or any other terminal-but-not-success outcome
+            return 1
         time.sleep(5)
-    print(f"            timed out at state={last_state} after {poll_seconds}s")
+    print(f"            timed out at state={last_signature} after {poll_seconds}s")
     print(f"            job_id={job_id} — re-poll later with get_job_status if you want to keep waiting")
     return 3
 
@@ -310,12 +339,18 @@ def main(argv: list[str]) -> int:
     p.add_argument(
         "--build",
         action="store_true",
-        help="Also call submit_build with smoke/minimum-payload.json and poll until terminal.",
+        help="Also call submit_build with smoke/full-payload.json and poll until terminal.",
     )
     p.add_argument(
         "--payload",
         default=None,
-        help="Path to a payload JSON file. Default: smoke/minimum-payload.json next to this script.",
+        help=(
+            "Path to a payload JSON file. Default: smoke/full-payload.json "
+            "next to this script (smallest known-buildable payload). Use "
+            "smoke/minimum-payload.json to exercise the schema floor; note "
+            "that payload deliberately omits icons + about and SAB will "
+            "reject it as a hard failure."
+        ),
     )
     p.add_argument(
         "--poll-seconds",
@@ -341,7 +376,7 @@ def main(argv: list[str]) -> int:
     import os.path
 
     payload_path = args.payload or os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "minimum-payload.json"
+        os.path.dirname(os.path.abspath(__file__)), "full-payload.json"
     )
     return step_build(session, payload_path, args.poll_seconds)
 

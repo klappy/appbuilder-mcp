@@ -11,3 +11,4 @@ dist/
 coverage/
 *.tsbuildinfo
 .cache/
+smoke/__pycache__/
