@@ -334,8 +334,8 @@ def step_build(session: McpSession, payload_path: str, poll_seconds: int) -> int
             "get_job_status", {"job_id": job_id}, request_id=21, timeout=30.0
         )
         state_payload = json.loads(envelope["result"]["content"][0]["text"])
-        state = state_payload.get("state")
-        fmode = state_payload.get("failure_mode")
+        state = (state_payload.get("state") or "").lower()
+        fmode = (state_payload.get("failure_mode") or "").lower()
         signature = (state, fmode)
         if signature != last_signature:
             print(f"            state={state}  failure_mode={fmode}  progress={state_payload.get('progress')}")
