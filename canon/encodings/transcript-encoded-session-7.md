@@ -261,3 +261,175 @@ Two parallel tracks, both unlocked by H-009's closure:
 2. **Durable container fallback (deferred, NOT for H-008's response window).** When (and only when) H-008 returns an answer that names the missing artifact, the container can be modified to auto-generate or auto-include it from a USFM zip that lacks it — making the MCP self-sufficient against the SIL priming-bundle shape. This is a **session-8 or later** work item, gated explicitly on H-008's resolution. Per D-018's reasoning, do not pre-build it on speculation.
 
 Neither track involves another H-009-style empirical guess. The cheap-test budget for the BookNames.xml axis is spent; the next-cheapest move is upstream consultation, not another fixture commit.
+
+---
+
+## Continuation — 2026-05-01T01:45Z pivot to upstream-test reverse-engineering
+
+The operator pushed back on the "go ask Chris" disposition with one obvious move I had failed to surface: search upstream SIL repositories for working test fixtures and reverse-engineer the missing input. This continuation captures that work and lands a much sharper hypothesis than H-008 was framed to ask.
+
+### D-019 — Upstream-evidence reading before another guess
+
+When H-009 falsified, the cheapest remaining move was *not* outreach but *one more pass through publicly available upstream artifacts*. Three upstream repositories, all under the `sillsdev` and `sil-car` orgs, give a direct read on what a working SAB build expects — without needing Chris Hubbard's time. D-019 chose this path before any H-008 outreach.
+
+Specifically inspected:
+- `sillsdev/docker-appbuilder-agent` (we had already cited this for the priming bundle, but had not surveyed all of `ansible/roles/app-builders/files/`)
+- `sillsdev/appbuilder-buildengine-api` (the production SIL build engine — REST API + AWS CodeBuild orchestration)
+- `WycliffeAssociates/AudioSABbuilder` and `sil-car/sango-transition-guide-app` (real `.appDef` examples in the wild)
+
+### O-022 — The SIL production build path does not use `-new -b` at all
+
+The decisive finding is in `sillsdev/appbuilder-buildengine-api/scripts/upload/default/build.sh`. The `build_apk()` function — the canonical production SAB invocation that has been building real Scripture apps for years — calls SAB exactly like this:
+
+```
+$APP_BUILDER_SCRIPT_PATH -load build.appDef -no-save -build \
+    -ks ${KS} -i ${SECRETS_DIR}/keys.txt \
+    -fp apk.output=${OUTPUT_DIR} \
+    -vc ${VERSION_CODE} -vn ${VERSION_NAME} \
+    ${SCRIPT_OPT}
+```
+
+Note what is **not** present:
+- `-new` is not used. Production never creates projects on the fly.
+- `-b <bible-zip>` is not used. Books are not passed as a CLI argument.
+- `-n <app-name>` and `-p <package>` are not used. They live inside the `.appDef`.
+
+What `prepare_appbuilder_project()` does upfront:
+1. Verifies exactly one `*.appDef` file exists in the project directory.
+2. Renames it to `build.appDef`.
+3. Renames the matching `<name>_data/` directory to `build_data/`.
+4. Reads `<package>`, `<version>`, etc. directly from the `.appDef` XML.
+
+The input to a real SIL build is **a complete pre-built SAB project** — a `<name>.appDef` XML file plus a `<name>_data/` directory tree. The build engine clones this whole project from a per-app git repository and runs `-load build.appDef -build`.
+
+### O-023 — A real `.appDef` carries the book-collection contents inline
+
+`WycliffeAssociates/AudioSABbuilder/resources/bible.appDef` (201 KB) and `sil-car/sango-transition-guide-app/Sango Transition Guide.appDef` both confirm the schema: book collections are an XML element directly inside `<app-definition>`, not derived from the bible files.
+
+The relevant element name is `<books id="C01">` (sequentially numbered: `C01`, `C02`, ... — "C01" is "book collection 1"). Each `<book>` child is fully specified:
+
+```xml
+<books id="C01">
+  <book-collection-name>Main Collection</book-collection-name>
+  <features type="bc">...</features>
+  <metadata>...</metadata>
+  <styles-info>...</styles-info>
+
+  <book id="GEN">
+    <name>Genesis</name>
+    <abbrev>Gen</abbrev>
+    <group>OT</group>
+    <sub-group>Pentateuch</sub-group>
+    <filename>01-GEN.usfm</filename>
+    <source>/home/dan/Downloads/b1cdb05baa.zip</source>
+  </book>
+  <!-- ... one <book> entry per book ... -->
+</books>
+```
+
+The `sango-transition-guide-app` example confirms the same structure with a single book (`<book id="XXA"><filename>94XXAGTSag.SFM</filename>...</book>`). The actual SFM/USFM file lives at `<project>_data/books/<filename>` on disk.
+
+The CLI error `"Add one or more books for book collection 1"` is now exactly readable: it means the `<books id="C01">` element in the project's `.appDef` has zero `<book>` children. Whatever is supposed to put `<book>` children there in `-new` mode either didn't run or didn't find what it needed.
+
+### O-024 — Two priming bundles, both with `-build` priming commented out
+
+`sillsdev/docker-appbuilder-agent/ansible/roles/app-builders/files/` contains **two** priming bundles, not one:
+
+- `eng-web_usfm.zip` — the bare USFM bundle we already know (sha256 `3c34cb69...`).
+- `eng-bsb_usx.zip` — a **proper DBL Text Release Bundle** with a different shape entirely: `metadata.xml` at root + `release/USX_1/<BOOK>.usx` + `release/eng_en.ldml` + `release/styles.xml` + `release/versification.vrs`. 70 files, 9.3 MB.
+
+The Ansible playbook (`tasks/main.yml`) has both priming `shell:` tasks **commented out**, in both cases. The commented-out commands use the `-new -b ... -build` pattern (the eng-web one omits `-build`; the eng-bsb one uses `-build-modern-pwa`). Per session-5 L-007, neither was ever empirically known to build successfully — they exist as cache-warming fixtures, not as proven workflows.
+
+The DBL bundle (`eng-bsb_usx.zip`) is interesting because PDF §4.8 explicitly distinguishes DBL bundles (which carry `metadata.xml`) from raw USFM (which carries `BookNames.xml` or `\toc` markers). It is plausible — though not yet tested — that `-new -b <dbl-zip>` works while `-new -b <usfm-zip>` does not.
+
+### O-025 — There is no upstream CI test that actually runs a SAB build
+
+The `sillsdev/docker-appbuilder-agent/.github/workflows/main.yml` builds and pushes the Docker image to GHCR, ECR, and AWS, but **runs no functional test**. There is no upstream "given fixture X, run SAB, assert APK appears" test in any repo I inspected. The production build engine (`appbuilder-buildengine-api`) has unit tests for its TypeScript orchestration layer, but the actual SAB invocation is exercised only against real customer projects in real AWS CodeBuild runs.
+
+This explains why the `-new -b` regression (if that's what it is) has gone uncaught: nothing tests it. The production path uses `-load build.appDef`, which works. The `-new -b` documented-CLI path that the appbuilder-mcp v1 spec assumed is empirically untested in any SIL CI surface.
+
+---
+
+## L — Lessons (continuation)
+
+### L-016 — "Documented" does not mean "tested" — verify both axes
+
+The PDF §4.14 page-38 worked example (`sab -new -n "..." -b MyBookBundle.zip -f "Charis SIL Compact" -i keys.txt -build`) reads as authoritative. It is the only documented end-to-end CLI invocation in the entire 197-page manual. Sessions 1–6 took it as the contract.
+
+The SIL production system does not exercise that contract. It uses a strictly different invocation (`-load build.appDef -build`). No CI in any inspected SIL repository tests the `-new -b -build` path. The PDF documentation is therefore *aspirational* with respect to the reality of how SAB is currently exercised — possibly correct, possibly stale, but not verified by any test we can read.
+
+The lesson generalizes: **when relying on documented behavior, inspect whether the behavior is empirically tested somewhere upstream.** If not, the document is a hypothesis, not a contract. The `appbuilder-buildengine-api/scripts/upload/default/build.sh` is the *empirical* SAB contract, and it differs materially from the PDF.
+
+This sharpens L-007 (sessions 5: "documentation > convenient examples") with a corollary: **documentation needs to be triangulated against working production examples.** When the two diverge, the production example is the live contract and the documentation is the unverified theory.
+
+### L-017 — A test you can read is worth a question you have to ask
+
+The session-6 H-008 framing ("ask Chris Hubbard / SIL") was the right disposition *given the assumption that we had exhausted upstream evidence*. We hadn't. Three upstream repositories — all public, all already implicitly cited in our canon — together pin the actual SAB input contract more tightly than any single round-trip with Chris would have. The cost was ~40 minutes of cloning, grepping, and reading; the benefit is a sharply-narrowed H-010 that makes any future Chris question one-line and answerable.
+
+The discipline: **before queuing a question to a human, exhaust the public artifacts that human is likely to point you back to.** Upstream tests, real-world examples, production scripts, and CI configurations are the same evidence Chris would use to answer — except they are read-once-by-anyone rather than read-once-and-answered-by-Chris. Bottleneck respect cuts both ways: the operator's attention is finite, but so is upstream maintainers'.
+
+---
+
+## H — Handoffs (continuation)
+
+### H-009 — REMAINS CLOSED
+
+H-009's falsification is not retroactively undone by these new findings. The `BookNames.xml` test ran honestly, the result was negative, and the fixture commit + smoke evidence stands. What the new findings change is the *successor* hypothesis space: H-008 narrows from "ask SIL" to "test the alternative invocation paths," and a new H-010 enters the active set.
+
+### H-008 — NARROWED FURTHER (now optional, not blocking)
+
+The previous session-7 framing of H-008 ("ask Chris Hubbard / SIL what we are missing") is now optional rather than blocking. If H-010 (below) closes by either testing path, H-008 reduces to a courtesy note rather than a dependency.
+
+The H-008 question, if asked, can be much sharper:
+
+> We see that production SIL builds invoke SAB as `-load build.appDef -build` against a pre-built `.appDef` + `_data/` project, and that no public CI exercises the `-new -b <bible-zip> -build` form documented on PDF page 38. In SAB v14.0 build 129, does the `-new -b` form still produce a project where `<books id="C01">` is auto-populated? Or has that path become advisory-only, with `-load <name>.appDef` the only supported build entry point?
+
+### H-010 — NEW: Test alternate inputs to the existing CLI surface
+
+Three sub-hypotheses, listed in increasing implementation cost. Each is independently testable. Recommend testing in order; first to confirm forms the basis of the durable container fix.
+
+**H-010a (cheapest — single-smoke test).** The DBL bundle `eng-bsb_usx.zip` (already in `sillsdev/docker-appbuilder-agent` priming files, well-formed with `metadata.xml` + `release/USX_1/*.usx` + `release/styles.xml` + `release/versification.vrs` + `release/eng_en.ldml`) may build with `-new -b <dbl-zip> -build` even though the bare USFM bundle does not. PDF §4.8 explicitly documents that DBL bundles use `metadata.xml` as the book-name source. If `-new` mode in build 129 only supports DBL/USX inputs and silently ignores plain USFM zips, this test confirms it.
+
+- Cost: one fixture commit (~9 MB DBL bundle) + one smoke. ~30 minutes.
+- Confirms: `kind: "usx_zip"` is the working input, `kind: "usfm_zip"` is broken.
+- Falsifies: same complaint persists → both inputs broken in `-new` mode → escalate to H-010b.
+
+**H-010b (medium — two-fixture test).** Build a minimal `.appDef` + `_data/` project structure programmatically from the existing eng-web USFM bundle. Specifically: generate a `eng-web.appDef` that contains `<package>org.ebible.web</package>`, `<app-name>Web Bible</app-name>`, and a `<books id="C01">` populated with one `<book>` per USFM file (each `<book>` having `<id>`, `<name>`, `<abbrev>`, `<filename>`); place the `.usfm` files under `eng-web_data/books/`. Re-zip the whole project and submit with the existing payload schema (it already accepts arbitrary zip contents at `bible_source.url`).
+
+- Cost: rewrite the BookNames.xml generator into a `.appDef` generator (~1–2 hours), one fixture commit, one smoke.
+- Confirms: `-new -b <project-zip>` is fundamentally not the path; `-load build.appDef` is.
+- Implication: container code change to invoke `-load <project>.appDef -build` instead of `-new -b <bible> -build` when the input zip looks like a project rather than a raw bible bundle. Significant durable change — out of scope for this session under D-018 reasoning, but cleanly scoped for a session-8 work item.
+
+**H-010c (highest — full container-side fallback).** Container auto-converts any incoming `usfm_zip` to a synthesized `<project>.appDef` + `<project>_data/` skeleton on the fly, so the agent contract (still accepts a USFM zip) remains stable while the under-the-hood SAB invocation switches to the production-proven `-load` path. This is the durable fix that closes Open-011 cleanly.
+
+- Cost: container code + tests + redeploy. Probably a full session-8.
+- Pre-requisite: H-010b must confirm that `-load <project>.appDef -build` works against a synthesized project. Otherwise H-010c is building on speculation again.
+
+**Recommended sequence.** H-010a first (single smoke, no container change, ~30 minutes). If H-010a confirms that DBL bundles work under `-new`, the answer for v0.x users with USFM-only data is "convert your USFM to a DBL bundle, or wait for H-010c," and H-010b becomes lower priority. If H-010a falsifies (both inputs broken under `-new`), H-010b is the next move.
+
+### H-002 — UNCHANGED, ACTIVE
+
+Still gated on producing a real APK. Closes when H-010 (any sub-letter) closes positive.
+
+### Open-011 — UNCHANGED, ACTIVE
+
+Still the umbrella "book-collection-1 unblock" item. Closes with H-010.
+
+### New: Open-014 — Document the `-new -b` vs `-load .appDef` distinction in canon
+
+The PDF §4.14 documents `-new -b` as if it were the canonical CLI path. The empirical SIL production system contradicts this. `canon/articles/cli-reference.md` and `canon/articles/book-collections.md` should both be amended (in a future session) to: (a) document `-load <project>.appDef -build` as the production-proven path, (b) clearly mark `-new -b` as documented-but-not-empirically-verified-in-build-129, (c) reference the upstream evidence (`appbuilder-buildengine-api/scripts/upload/default/build.sh` and the `WycliffeAssociates/AudioSABbuilder` / `sil-car/sango-transition-guide-app` `.appDef` examples).
+
+This is an Open and not a D because the right place to land these edits is after H-010 closes — the article's stable form depends on which sub-letter wins.
+
+---
+
+## Updated ID continuity through session-7 continuation
+
+- **D**: D-001..D-019
+- **O**: O-001..O-025
+- **L**: L-001..L-017
+- **C**: C-001..C-009
+- **H**: H-001 (closed s4), H-002 (active), H-003 (active), H-004 (closed s1), H-005 (superseded s4), H-006 (closed s5), H-007 (closed s6), H-008 (active, narrowed s7 cont., now optional), H-009 (closed s7, FALSIFIED), H-010 (new s7 cont., active, three sub-letters)
+- **Open**: Open-005 (closed s3), Open-006 (active), Open-007 (active), Open-008 (active), Open-009 (active), Open-010 (closed s6), Open-011 (active), Open-012 (active), Open-013 (active), Open-014 (new s7 cont., active)
+
+Session 8 continues at D-020, O-026, L-018, C-010, H-011, Open-015 if new items emerge.
