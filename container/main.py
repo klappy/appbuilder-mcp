@@ -179,12 +179,29 @@ async def upload_artifact(
 
 
 def find_apk(build_dir: Path) -> Path | None:
-    """SAB writes APKs under <build_dir>/build/output/apk/... Find the latest one."""
+    """SAB writes APKs in two places, depending on the -fp flags:
+
+      <build_dir>/.../*-release.apk    — the gradle-built APK (intermediate)
+      <work_dir>/apk_out/<name>.apk    — SAB's "Copying APK to output folder" target
+                                          when -fp apk.output=<work_dir>/apk_out is set
+
+    Search both. The work_dir is the parent of build_dir per the convention
+    in run_scripture_app_builder. Apk_out is the canonical caller-facing
+    artifact (signed, version-stamped); the gradle-stage APK is a build
+    intermediate. Prefer apk_out when present.
+    """
+    work_dir = build_dir.parent
+    apk_out = work_dir / "apk_out"
+    if apk_out.is_dir():
+        candidates = list(apk_out.glob("*.apk"))
+        if candidates:
+            candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            return candidates[0]
     candidates = list(build_dir.rglob("*.apk"))
-    if not candidates:
-        return None
-    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-    return candidates[0]
+    if candidates:
+        candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        return candidates[0]
+    return None
 
 
 def detect_bundle_shape(zip_path: Path) -> str:
@@ -606,7 +623,20 @@ async def run_scripture_app_builder(
         cmd += ["-ic", str(ic)]
     if payload.build_modern_pwa:
         cmd += ["-build-modern-pwa"]
+    # Two -fp tokens are required to land an APK where find_apk() looks:
+    #   build=<dir>      — SAB scratch dir for intermediate gradle output
+    #   apk.output=<dir> — where SAB copies the final signed APK after build
+    # Without apk.output, SAB defaults to ~/App\ Builder/<AppType>/Apk\ Output/
+    # which lives outside our work_dir. The H-002-closure smoke caught this:
+    # SAB reported "Android APK built successfully" + "Copying APK to output
+    # folder" but find_apk() returned None because the APK was at
+    # /root/App\ Builder/Scripture\ Apps/Apk\ Output/, not under build_out.
+    # SIL's own appbuilder-buildengine-api/scripts/upload/default/build.sh
+    # passes both -fp build=... and -fp apk.output=... for the same reason.
+    apk_out = work_dir / "apk_out"
+    apk_out.mkdir(parents=True, exist_ok=True)
     cmd += ["-fp", f"build={build_out}"]
+    cmd += ["-fp", f"apk.output={apk_out}"]
     cmd += ["-build"]
 
     log.info("Running SAB (shape=%s): %s", shape, " ".join(cmd))
