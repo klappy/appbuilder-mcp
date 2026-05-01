@@ -15,6 +15,12 @@
 
 import { z } from "zod";
 
+import {
+  buildBlobsArray,
+  buildDoublesArray,
+  rewriteSemanticSql,
+} from "./telemetry-schema.js";
+
 // ────────────────────────────────────────────────────────────
 //  Constants
 // ────────────────────────────────────────────────────────────
@@ -147,9 +153,10 @@ export interface ParsedRpc {
 /**
  * Write a single telemetry data point.
  *
- * Blobs (12) and doubles (10) are mapped positionally per the schema in
- * canon/governance/telemetry-governance.md §"Structural Dimensions".
- * The writer never accepts free-form strings beyond the typed slots.
+ * Positions for blobs (12) and doubles (10) come from `telemetry-schema.ts`
+ * which is the single source of truth. `buildBlobsArray` / `buildDoublesArray`
+ * assemble in BLOB_SCHEMA / DOUBLE_SCHEMA order from a name-keyed map, so
+ * callers cannot accidentally transpose positions.
  */
 export function writeTelemetry(
   env: TelemetryEnv,
@@ -158,33 +165,33 @@ export function writeTelemetry(
 ): void {
   if (!env.APPBUILDER_TELEMETRY) return;
 
-  const blobs: string[] = [
-    /* 1  event_type         */ eventType,
-    /* 2  method             */ fields.method ?? "",
-    /* 3  tool_name          */ fields.tool_name ?? "",
-    /* 4  consumer_label     */ fields.consumer_label ?? "unknown",
-    /* 5  consumer_source    */ fields.consumer_source ?? "unknown",
-    /* 6  worker_version     */ WORKER_VERSION,
-    /* 7  phase              */ fields.phase ?? "",
-    /* 8  failure_mode       */ fields.failure_mode ?? "",
-    /* 9  cache_outcome      */ fields.cache_outcome ?? "",
-    /* 10 payload_hash_prefix*/ (fields.payload_hash_prefix ?? "").slice(0, 8),
-    /* 11 docs_audience      */ fields.docs_audience ?? "",
-    /* 12 docs_top_uri       */ fields.docs_top_uri ?? "",
-  ];
+  const blobs = buildBlobsArray({
+    event_type: eventType,
+    method: fields.method,
+    tool_name: fields.tool_name,
+    consumer_label: fields.consumer_label ?? "unknown",
+    consumer_source: fields.consumer_source ?? "unknown",
+    worker_version: WORKER_VERSION,
+    phase: fields.phase,
+    failure_mode: fields.failure_mode,
+    cache_outcome: fields.cache_outcome,
+    payload_hash_prefix: (fields.payload_hash_prefix ?? "").slice(0, 8),
+    docs_audience: fields.docs_audience,
+    docs_top_uri: fields.docs_top_uri,
+  });
 
-  const doubles: number[] = [
-    /* 1  count              */ 1,
-    /* 2  duration_ms        */ fields.duration_ms ?? 0,
-    /* 3  bytes_in           */ fields.bytes_in ?? 0,
-    /* 4  bytes_out          */ fields.bytes_out ?? 0,
-    /* 5  sources_count      */ fields.sources_count ?? 0,
-    /* 6  fonts_count        */ fields.fonts_count ?? 0,
-    /* 7  figures_count      */ fields.figures_count ?? 0,
-    /* 8  passes_completed   */ fields.passes_completed ?? 0,
-    /* 9  overfull_count     */ fields.overfull_count ?? 0,
-    /* 10 pages_count        */ fields.pages_count ?? 0,
-  ];
+  const doubles = buildDoublesArray({
+    count: 1,
+    duration_ms: fields.duration_ms,
+    bytes_in: fields.bytes_in,
+    bytes_out: fields.bytes_out,
+    sources_count: fields.sources_count,
+    fonts_count: fields.fonts_count,
+    figures_count: fields.figures_count,
+    passes_completed: fields.passes_completed,
+    overfull_count: fields.overfull_count,
+    pages_count: fields.pages_count,
+  });
 
   env.APPBUILDER_TELEMETRY.writeDataPoint({
     blobs,
@@ -438,8 +445,13 @@ export async function forwardTelemetryQuery(
   sql: string,
   consumerLabel: string,
 ): Promise<TelemetryQueryResult> {
+  // Pre-step: rewrite semantic field names → positional column refs.
+  // Idempotent — callers using `blob1`/`double2` directly are unaffected.
+  // Authority: klappy://canon/specs/appbuilder-mcp-v1-spec §3 telemetry_public.
+  const rewritten = rewriteSemanticSql(sql);
+
   // Guard 1: dataset allowlist
-  if (!validateDatasetAllowlist(sql)) {
+  if (!validateDatasetAllowlist(rewritten)) {
     return sanitizedError(
       "Query must reference only dataset appbuilder_telemetry",
     );
@@ -470,7 +482,7 @@ export async function forwardTelemetryQuery(
           Authorization: `Bearer ${env.CF_API_TOKEN}`,
           "Content-Type": "text/plain",
         },
-        body: sql,
+        body: rewritten,
       },
     );
     if (!res.ok) return sanitizedError("Query execution failed");
@@ -478,7 +490,7 @@ export async function forwardTelemetryQuery(
     return {
       rows: data.data ?? [],
       row_count: (data.data ?? []).length,
-      query: sql,
+      query: rewritten,
       executed_at: new Date().toISOString(),
     };
   } catch {

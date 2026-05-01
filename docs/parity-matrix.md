@@ -54,8 +54,8 @@ This is the most visible parity dimension — what an MCP client sees on `tools/
 | `cancel_job` | `cancel_job` | none | n/a | closed |
 | `docs` | `docs` | none (both backed by oddkit, both reference their own canon) | n/a | closed |
 | `telemetry_policy` | `telemetry_policy` | none (both use three-tier fallback to `telemetry-governance.md`) | n/a | closed |
-| `telemetry_public` (with semantic-name SQL rewriter — `WHERE event_type='tool_call'` auto-rewritten to `WHERE blob1='tool_call'`) | `telemetry_public` (positional refs only — caller must use `blob1`/`double2`) | semantic-name SQL rewriting absent; ergonomic regression | P1 | open |
-| `telemetry_schema` (returns the `{name, position, desc}` mapping for every blob/double) | **absent** | tool missing entirely; without it agents have no runtime way to discover the field names the rewriter accepts | P1 | open |
+| `telemetry_public` (with semantic-name SQL rewriter — `WHERE event_type='tool_call'` auto-rewritten to `WHERE blob1='tool_call'`) | `telemetry_public` (positional refs only — caller must use `blob1`/`double2`) | semantic-name SQL rewriting absent; ergonomic regression | P1 | in_review (P1.4; `feat/telemetry-schema-source-of-truth`) |
+| `telemetry_schema` (returns the `{name, position, desc}` mapping for every blob/double) | **absent** | tool missing entirely; without it agents have no runtime way to discover the field names the rewriter accepts | P1 | in_review (P1.3; `feat/telemetry-schema-source-of-truth`) |
 
 **Tool count:** ptxprint-mcp = 7, appbuilder-mcp = 6. The single missing tool is `telemetry_schema`. Closing this is coupled to closing the `telemetry-schema.ts` module gap in §2.
 
@@ -71,10 +71,10 @@ This is the most visible parity dimension — what an MCP client sees on `tools/
 | `bundled-policy.ts` | 7 | 7 | identical pattern | n/a | closed |
 | `container.ts` | 32 | 37 | structural parity (5-LOC delta likely the SAB-specific job route name) | n/a | closed |
 | `output-naming.ts` | 39 | 37 | structural parity | n/a | closed |
-| `telemetry.ts` | 546 | 519 | comparable; ptxprint-mcp's is slimmer because schema declaration moved to `telemetry-schema.ts`. appbuilder's still has scattered position assumptions | coupled to `telemetry-schema.ts` gap below | P1 | open |
+| `telemetry.ts` | 546 | 519 | comparable; ptxprint-mcp's is slimmer because schema declaration moved to `telemetry-schema.ts`. appbuilder's still has scattered position assumptions | coupled to `telemetry-schema.ts` gap below | P1 | in_review (P1.2 coupled; `feat/telemetry-schema-source-of-truth`) |
 | `docs.ts` | 326 | 326 | identical structure (oddkit proxy) | n/a | closed |
 | `stubs/ai-empty.ts` | (present) | (present) | identical | n/a | closed |
-| **`telemetry-schema.ts`** (BLOB_SCHEMA, DOUBLE_SCHEMA, `b()` / `d()` helpers, `rewriteSemanticSql()`, `buildBlobsArray()` / `buildDoublesArray()`, `exportSchema()` for the MCP tool) | 296 | **absent** | the entire schema-as-source-of-truth module is missing — without it column-position drift is silent; with it, drift becomes a compile/test error | P1 | open |
+| **`telemetry-schema.ts`** (BLOB_SCHEMA, DOUBLE_SCHEMA, `b()` / `d()` helpers, `rewriteSemanticSql()`, `buildBlobsArray()` / `buildDoublesArray()`, `exportSchema()` for the MCP tool) | 296 | **absent** | the entire schema-as-source-of-truth module is missing — without it column-position drift is silent; with it, drift becomes a compile/test error | P1 | in_review (P1.2; `feat/telemetry-schema-source-of-truth`) |
 | **`snapshot.ts`** (Track A weekly snapshot mechanism — `runSnapshot()`, `runSnapshotForWeeks()`, `mergeSnapshots()`, JSONL parse/serialize, `getLifetimeHeroStat()`, `METRICS` table) | 586 | **absent** | weekly aggregate archive past the 90-day Analytics Engine retention; coupled to cron + R2 bucket + bootstrap route | P2 | open |
 | **`homepage.ts`** (public landing page — book × font picker, audit panel, schema diagnostics, demo deploy) | 1735 | **absent** | public-facing demo / "vodka architecture" surface; appbuilder has no homepage at all | P3 | open |
 | `telemetry-schema.ts` companion: `scripts/bundle-telemetry-policy.ts` | (present) | (present) | both ship the bundled-policy build script | n/a | closed |
@@ -90,7 +90,7 @@ This is the most visible parity dimension — what an MCP client sees on `tools/
 | `vitest.config.ts` present | ✓ (include: `test/**/*.test.ts`) | ✓ (identical) | none | n/a | closed |
 | `npm test` script | `vitest run` | `vitest run` | none (script wired) | n/a | closed |
 | `test/` directory | 3 files: `telemetry-schema.test.ts`, `snapshot.test.ts`, `telemetry.test.ts` | **absent (zero tests)** | `npm test` is currently a no-op against zero specs; coverage = 0 | P1 | in_review (P1.1; `feat/test-infra-payload`) |
-| Schema-pinning tests (positions are forever) | covered in `telemetry-schema.test.ts` | absent | coupled to telemetry-schema.ts module gap | P1 | open |
+| Schema-pinning tests (positions are forever) | covered in `telemetry-schema.test.ts` | absent | coupled to telemetry-schema.ts module gap | P1 | in_review (P1.2 coupled; `feat/telemetry-schema-source-of-truth`) |
 | Telemetry unit tests (privacy-floor, three-tier fallback, rate-limit, dataset-allowlist) | covered in `telemetry.test.ts` | absent | the v1 spec §6 DoD items have no test pinning | P1 | in_review (P1.7; `feat/telemetry-tests`) |
 | Snapshot tests (idempotency, week boundaries, JSONL round-trip, merge) | covered in `snapshot.test.ts` | absent | coupled to snapshot.ts module gap | P2 | open |
 
@@ -146,7 +146,7 @@ This is a joint deficiency, not an appbuilder-specific gap. Adding CI to appbuil
 | `GET /internal/job-cancel-flag` | ✓ | ✓ | identical | n/a | closed |
 | `PUT /internal/upload` | ✓ | ✓ | identical | n/a | closed |
 | `POST /internal/snapshot/run` | ✓ (gated by `SNAPSHOT_BOOTSTRAP_TOKEN`) | absent | coupled to snapshot.ts | P2 | open |
-| `GET /diagnostics/schema` | ✓ (returns the BLOB/DOUBLE schema as JSON for external query authors) | absent | coupled to telemetry-schema.ts; agent-friendly discovery surface | P1 | open |
+| `GET /diagnostics/schema` | ✓ (returns the BLOB/DOUBLE schema as JSON for external query authors) | absent | coupled to telemetry-schema.ts; agent-friendly discovery surface | P1 | in_review (P1.5; `feat/telemetry-schema-source-of-truth`) |
 | `GET /health` | ✓ (returns `{ ok, service, version, spec, tools }`) | unknown — needs verification | likely present (referenced in README) but not confirmed in this scan; check before claiming parity | P3 | open |
 | `/mcp` (streamable HTTP), `/sse` (legacy) | both supported via `agents/mcp` | both supported via `agents/mcp` | identical (both use same SDK version) | n/a | closed |
 
