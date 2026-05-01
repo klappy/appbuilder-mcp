@@ -236,7 +236,7 @@ function rewriteSelectColumn(col: string): string {
   const [, leading, body, trailing] = trimMatch;
 
   // Case 1-3: a single identifier, optionally with AS alias.
-  const simple = body.match(/^(\w+)(\s+(?:AS|as)\s+\w+)?$/);
+  const simple = body.match(/^(\w+)(\s+AS\s+\w+)?$/i);
   if (simple) {
     const ident = simple[1];
     const asTail = simple[2] ?? "";
@@ -260,7 +260,7 @@ function rewriteSelectColumn(col: string): string {
   // Case 4: complex expression — substitute schema names without aliasing.
   //   Peel off any trailing `AS alias` so a user-chosen alias matching a
   //   schema field name (e.g. `AS count`) is preserved verbatim.
-  const aliasMatch = body.match(/^([\s\S]*?)(\s+(?:AS|as)\s+\w+)$/);
+  const aliasMatch = body.match(/^([\s\S]*?)(\s+AS\s+\w+)$/i);
   if (aliasMatch) {
     const [, expr, asTail] = aliasMatch;
     return `${leading}${substituteFieldsToCol(expr)}${asTail}${trailing}`;
