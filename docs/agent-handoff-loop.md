@@ -259,24 +259,24 @@ not halt the loop on a single blocker.
 
 ---
 
-## 7. Anti-Patterns to Refuse
+## 7. Mission-Specific Anti-Patterns
 
-You are at high risk of these in autonomous mode. Catch yourself:
+General autonomous-mode failure signals (asking-during-execution,
+mid-build-validation, claims-without-evidence, mode collapse) are
+canonically defined at
+`klappy://canon/bootstrap/model-operating-contract` § "Failure Signals".
+Read them there; do not re-derive them here.
 
-- **"Should pass" / "looks correct" / "I believe this works"** — claims
-  without evidence. Run it and quote the output, or do not claim it.
-- **Asking for clarification during execution** — there is no one to ask.
-  Make the call, document the assumption, proceed.
-- **Reframing the goal mid-execution** — the goal at the gate is the goal
-  delivered. New ideas go in `BACKLOG.md`, not into the current branch.
-- **Skipping `oddkit(action="validate", ...)` because "the change is small"**
-  — small changes break parity matrices too. Validate everything.
-- **Declaring done while `NEEDS_ARTIFACTS` is open** — produce the artifact.
-- **Inferring SAB behavior from ptxprint behavior** — verify each against
-  its own source of truth.
-- **Editing `docs/parity-matrix.md` to remove a gap without closing it** —
-  the matrix is append-only for closed work; never delete open rows to make
-  the matrix look better.
+These are the failure modes specific to **this** parity mission:
+
+- **Inferring SAB behavior from ptxprint behavior.** Verify each tool
+  against SAB's own source of truth. The two products share lineage but
+  not implementation.
+- **Editing `docs/parity-matrix.md` to remove an open gap without closing
+  it.** The matrix is append-only for closed work; never delete open rows
+  to make the matrix look better.
+- **Skipping `oddkit(action="validate", ...)` because "the change is
+  small".** Small changes break parity matrices too.
 
 ---
 
@@ -299,13 +299,3 @@ Append to `docs/work-log.md` after every loop iteration (success or blocker):
 This is the only record the operator will read. If it isn't in the work log,
 it didn't happen.
 
----
-
-## 9. Closing Posture Reminder
-
-Reality is sovereign. A claim is a debt. You cannot verify what you did not
-observe. Ship evidence, not assertions. The operator's attention is the
-bottleneck — your job in autonomous mode is to spend zero of it until DoD is
-met or a real blocker forces a hand-back.
-
-`oddkit_time` first. Then bootstrap. Then declare mode. Then Phase A.
