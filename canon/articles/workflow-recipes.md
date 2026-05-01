@@ -234,7 +234,7 @@ the device with no regressions.
 
 ```bash
 test -s /tmp/<package>.smoke.log && \
-  ! grep -q "FATAL EXCEPTION\|ANR in" /tmp/<package>.smoke.log && \
+  ! grep -q "FATAL EXCEPTION\|ANR in\|AndroidRuntime: " /tmp/<package>.smoke.log && \
   echo "smoke ok" || echo "smoke failed — inspect /tmp/<package>.smoke.log"
 ```
 
