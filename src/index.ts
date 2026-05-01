@@ -50,6 +50,7 @@ import {
   cancelJob as cancelJobDo,
 } from "./job-state-do.js";
 import { fetchDocs } from "./docs.js";
+import { HOMEPAGE_HTML } from "./homepage.js";
 import { BUNDLED_POLICY } from "./bundled-policy.js";
 import { shimMcpAccept, downgradeSSEToJson } from "./accept-shim.js";
 import { exportSchema } from "./telemetry-schema.js";
@@ -518,23 +519,65 @@ export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
 
-    // Health check
-    if (url.pathname === "/" || url.pathname === "/health") {
-      return Response.json({
-        ok: true,
-        service: "appbuilder-mcp",
-        version: WORKER_VERSION,
-        spec: "v1.3-draft",
-        tools: [
-          "submit_build",
-          "get_job_status",
-          "cancel_job",
-          "docs",
-          "telemetry_public",
-          "telemetry_policy",
-          "telemetry_schema",
-        ],
+    // GET / serves the marketing/landing page. The page itself does live
+    // browser-side calls to /health (CORS-enabled below) and to /mcp
+    // (tools/list, telemetry_public) so it doubles as a transparency board.
+    //
+    // Embedded as a TS template literal in src/homepage.ts to avoid pulling
+    // in the assets binding for a single static file.
+    if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/") {
+      const isHead = req.method === "HEAD";
+      return new Response(isHead ? null : HOMEPAGE_HTML, {
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          // Short browser cache; the page is live-data-driven so we don't
+          // want stale embedded snapshot data lingering for hours.
+          "cache-control": "public, max-age=300, s-maxage=300",
+        },
       });
+    }
+
+    // ---------- /health ----------
+    //
+    // Public JSON status endpoint. CORS-open so the homepage's live status
+    // probe (and any external uptime monitor) can read it from the browser.
+    // The MCP transport (/mcp, /sse) already sets its own CORS headers via
+    // the agents/mcp SDK — this only patches /health.
+    if (url.pathname === "/health") {
+      if (req.method === "OPTIONS") {
+        return new Response(null, {
+          status: 204,
+          headers: {
+            "access-control-allow-origin": "*",
+            "access-control-allow-methods": "GET, OPTIONS",
+            "access-control-allow-headers": "Content-Type",
+            "access-control-max-age": "86400",
+          },
+        });
+      }
+      return Response.json(
+        {
+          ok: true,
+          service: "appbuilder-mcp",
+          version: WORKER_VERSION,
+          spec: "v1.3-draft",
+          tools: [
+            "submit_build",
+            "get_job_status",
+            "cancel_job",
+            "docs",
+            "telemetry_public",
+            "telemetry_policy",
+            "telemetry_schema",
+          ],
+        },
+        {
+          headers: {
+            "access-control-allow-origin": "*",
+            "cache-control": "no-store",
+          },
+        },
+      );
     }
 
     // Schema diagnostics — companion to the telemetry_schema MCP tool.
