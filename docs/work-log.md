@@ -20,6 +20,59 @@ derives_from: "docs/agent-prompts/02-build-session.md §Per-gap loop step 5, doc
 
 ---
 
+## 2026-05-01T11:42Z — P1.6: Author DEPLOY.md
+
+- **Branch:** `feat/deploy-md` (branched from `origin/main` after PR #6 merge).
+- **PR:** _to be appended once opened_
+- **Spec criteria (§3 P1.6):** DEPLOY.md exists; secret walkthrough for
+  CF_API_TOKEN, CF_ACCOUNT_ID, optional TELEMETRY_VERIFIED_CLIENTS and
+  SNAPSHOT_BOOTSTRAP_TOKEN; R2 lifecycle policy (`wrangler r2 bucket
+  lifecycle add` invocation); post-deploy verification (`curl /health`);
+  production-keystore secret pattern with worked example; passes Writing
+  Canon checklist (§2.1).
+- **Files added/modified:**
+  - `DEPLOY.md` — **new**, 9 sections (pre-deploy, secrets, R2 lifecycle,
+    deploy, post-deploy, production keystores, updates, rollback,
+    references). All required walkthroughs present.
+  - `docs/parity-matrix.md` — §7 `DEPLOY.md` row → in_review.
+- **Verification:**
+  - DEPLOY.md is self-contained; the validator can follow it on a clean
+    Cloudflare account end-to-end.
+  - Title + blockquote summary + `## Summary — what you need before you
+    deploy` + scannable headers + no buried claims (Writing Canon §2.1
+    spirit; top-level repo docs follow the README/BUILD/ARCHITECTURE
+    convention of no frontmatter — applying frontmatter only to canon
+    articles).
+- **Assumptions made (no operator):**
+  - Treated `CF_ACCOUNT_ID` as a secret (matching current `wrangler.jsonc`
+    secrets-block comment) and explicitly flagged the open P3.21 ADR
+    inline. The doc tells operators what to do today and signals what
+    will change when P3.21 closes; no operator action is required at
+    that future point.
+  - Mentioned `SNAPSHOT_BOOTSTRAP_TOKEN` as forthcoming (gates the future
+    `POST /internal/snapshot/run` route from P2.10) so operators
+    pre-set it if they like, without making it required.
+  - The recommended R2 lifecycle (90-day expire on `outputs/`) matches
+    Cloudflare Analytics Engine's retention window. Doc explicitly tells
+    operators to adjust if their requirements differ — not a hard rule.
+  - Used `wrangler r2 bucket lifecycle add` syntax. If the operator's
+    wrangler version pre-dates that subcommand, the dashboard fallback
+    is documented in §3.2.
+- **Canon consulted:**
+  - `wrangler.jsonc` — bindings, vars, secrets comment block.
+  - `canon/articles/bundled-debug-keystore.md` (referenced from §6).
+  - `canon/governance/telemetry-governance.md` (referenced from §6.3).
+- **Risks for the validator:**
+  - If `wrangler r2 bucket lifecycle add` syntax has changed in a recent
+    wrangler release, §3.3's invocation may need a tweak. The dashboard
+    fallback covers the regression. Easiest sanity check: validator runs
+    the command on a fresh test bucket.
+  - The "Workers Paid plan required" claim in §1 — the SAB container
+    image (~1.7 GiB upstream) cannot run on the Workers Free plan; that
+    is the load-bearing claim.
+
+---
+
 ## 2026-05-01T11:20Z — P1.1: Add `test/` directory and first test
 
 - **Branch:** `feat/test-infra-payload`
