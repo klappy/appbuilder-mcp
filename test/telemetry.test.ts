@@ -248,8 +248,20 @@ describe("validateDatasetAllowlist (dataset allowlist)", () => {
 // ────────────────────────────────────────────────────────────
 
 describe("forwardTelemetryQuery (guard composition)", () => {
+  let originalFetch: typeof fetch;
+
   beforeEach(() => {
     resetRateLimiter();
+    originalFetch = globalThis.fetch;
+    // Stub fetch so any guard-passing call cannot reach the real
+    // api.cloudflare.com endpoint. Tests in this block only assert
+    // sanitized rejection paths; they never depend on the response body.
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ data: [] }), { status: 200 }),
+    ) as unknown as typeof fetch;
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
   });
 
   const env: TelemetryEnv = {
