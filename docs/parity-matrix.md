@@ -160,7 +160,7 @@ This is a joint deficiency, not an appbuilder-specific gap. Adding CI to appbuil
 | `ARCHITECTURE.md` | 93 | 110 | parity (appbuilder slightly longer) | n/a | closed |
 | `BUILD.md` | 166 | 282 | appbuilder substantially longer (Android-toolchain build is more complex than TeX install) | n/a (appbuilder ahead) | closed |
 | `CONTRIBUTING.md` | 47 | 47 | identical | n/a | closed |
-| `DEPLOY.md` | 172 | **absent** | secret-set walkthrough, R2 lifecycle, post-deploy verification — appbuilder operators have no equivalent recipe | P1 | open |
+| `DEPLOY.md` | 172 | **absent** | secret-set walkthrough, R2 lifecycle, post-deploy verification — appbuilder operators have no equivalent recipe | P1 | in_review (P1.6; `feat/deploy-md`) |
 | `LICENSE` | MIT | MIT | identical | n/a | closed |
 
 ---
