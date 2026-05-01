@@ -52,6 +52,7 @@ import {
 import { fetchDocs } from "./docs.js";
 import { BUNDLED_POLICY } from "./bundled-policy.js";
 import { exportSchema } from "./telemetry-schema.js";
+import { handleDiagnosticsSchema } from "./diagnostics-schema-route.js";
 import {
   runSnapshot,
   weekStartFor,
@@ -533,6 +534,15 @@ export default {
           "telemetry_schema",
         ],
       });
+    }
+
+    // Schema diagnostics — companion to the telemetry_schema MCP tool.
+    // Implementation in src/diagnostics-schema-route.ts so it stays unit-testable
+    // without pulling in the cloudflare:* / agents/mcp imports.
+    // Authority: klappy://canon/specs/appbuilder-mcp-v1-spec §3 (parity row P1.5).
+    {
+      const diagnosticsResponse = handleDiagnosticsSchema(req);
+      if (diagnosticsResponse) return diagnosticsResponse;
     }
 
     // Internal: container calls back to update job state.

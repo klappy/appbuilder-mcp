@@ -121,6 +121,41 @@ derives_from: "docs/agent-prompts/02-build-session.md §Per-gap loop step 5, doc
 
 ---
 
+## 2026-05-01T11:35Z — P1.5: GET /diagnostics/schema (stacked onto the P1.2/P1.3/P1.4 cluster)
+
+- **Branch:** `feat/telemetry-schema-source-of-truth` (same branch as the
+  cluster — P1.5 has a hard dependency on P1.2, qualifying for shared-PR
+  treatment under spec §6.1).
+- **PR:** _amended into the same PR as P1.2/P1.3/P1.4_
+- **Spec criteria (§3 P1.5):** GET /diagnostics/schema returns 200 +
+  application/json + body equal to exportSchema(); PR body includes a curl
+  transcript against a running instance.
+- **Files added/modified:**
+  - `src/diagnostics-schema-route.ts` — **new**, extracted route handler.
+  - `src/index.ts` — dispatcher delegates to `handleDiagnosticsSchema`.
+  - `test/diagnostics-schema.test.ts` — **new**, 6 tests covering 200,
+    content-type, body equality, dataset+counts, and dispatcher
+    fall-through behavior.
+  - `docs/transcripts/...` — appended P1.5 synthetic-curl transcript and
+    deferral note.
+  - `docs/parity-matrix.md` — §6 `/diagnostics/schema` row → in_review.
+- **Verification:** `npm test` → 39 passed (39); `npm run tsc` clean.
+- **Assumptions made (no operator):**
+  - Extracted the route handler to its own module so vitest can call it
+    without resolving `cloudflare:*` / `agents/mcp` imports. Inline route
+    handlers in `src/index.ts` cannot be unit-tested under Node's default
+    ESM loader. Same pattern is used by ptxprint-mcp's `homepage.ts`,
+    `snapshot.ts` etc., so this is canon-aligned.
+  - Live `wrangler dev` curl transcript is deferred to the validator stage
+    (no CF secrets in the build session); the vitest tests exercise the
+    exact handler the dispatcher invokes.
+- **Risks for the validator:**
+  - The dispatcher fall-through (returning the route's null vs response) is
+    new logic in `src/index.ts`. The "return null on non-matching" pattern
+    keeps the route open for extension — additional sub-routes under
+    `/diagnostics/*` can ship as separate handlers without restructuring.
+---
+
 ## 2026-05-01T11:30Z — P1.2 + P1.3 + P1.4: telemetry-schema source-of-truth (coupled cluster)
 
 - **Branch:** `feat/telemetry-schema-source-of-truth`

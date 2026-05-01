@@ -146,7 +146,7 @@ This is a joint deficiency, not an appbuilder-specific gap. Adding CI to appbuil
 | `GET /internal/job-cancel-flag` | ✓ | ✓ | identical | n/a | closed |
 | `PUT /internal/upload` | ✓ | ✓ | identical | n/a | closed |
 | `POST /internal/snapshot/run` | ✓ (gated by `SNAPSHOT_BOOTSTRAP_TOKEN`) | absent | coupled to snapshot.ts | P2 | open |
-| `GET /diagnostics/schema` | ✓ (returns the BLOB/DOUBLE schema as JSON for external query authors) | absent | coupled to telemetry-schema.ts; agent-friendly discovery surface | P1 | open |
+| `GET /diagnostics/schema` | ✓ (returns the BLOB/DOUBLE schema as JSON for external query authors) | absent | coupled to telemetry-schema.ts; agent-friendly discovery surface | P1 | in_review (P1.5; `feat/telemetry-schema-source-of-truth`) |
 | `GET /health` | ✓ (returns `{ ok, service, version, spec, tools }`) | unknown — needs verification | likely present (referenced in README) but not confirmed in this scan; check before claiming parity | P3 | open |
 | `/mcp` (streamable HTTP), `/sse` (legacy) | both supported via `agents/mcp` | both supported via `agents/mcp` | identical (both use same SDK version) | n/a | closed |
 

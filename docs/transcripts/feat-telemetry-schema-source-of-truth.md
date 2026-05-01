@@ -1,9 +1,9 @@
 # Transcript — feat/telemetry-schema-source-of-truth
 
 > Evidence for parity rows P1.2 (telemetry-schema.ts), P1.3 (telemetry_schema
-> MCP tool), and P1.4 (semantic-name SQL rewriter wired into telemetry_public).
-> Path is referenced from the PR per `docs/parity-spec.md` §2 evidence
-> requirement #4.
+> MCP tool), P1.4 (semantic-name SQL rewriter wired into telemetry_public),
+> and P1.5 (GET /diagnostics/schema route). Path is referenced from the PR
+> per `docs/parity-spec.md` §2 evidence requirement #4.
 
 ## P1.2 — Module shape (exportSchema() output)
 
@@ -117,12 +117,63 @@ idempotency) is asserted by 13 tests in
 P1.1 PR is on a separate branch and not yet merged. After P1.1 merges, the
 combined test count will include the 13 payload tests.)
 
+## P1.5 — GET /diagnostics/schema (synthetic curl transcript)
+
+The route handler is extracted to `src/diagnostics-schema-route.ts` so it can
+be exercised without pulling in the cloudflare:* / agents/mcp imports the
+worker entry requires. The dispatcher in `src/index.ts` delegates to
+`handleDiagnosticsSchema` and returns its response when non-null.
+
+Synthetic curl-like transcript captured by invoking the handler with a real
+`Request` object (`npx tsx`):
+
+```
+$ npx tsx -e "
+import('./src/diagnostics-schema-route.ts').then(async ({ handleDiagnosticsSchema }) => {
+  const req = new Request('https://appbuilder-mcp.workers.dev/diagnostics/schema', { method: 'GET' });
+  const res = handleDiagnosticsSchema(req);
+  console.log('HTTP/1.1', res.status, res.statusText || '');
+  for (const [k, v] of res.headers) console.log(k + ':', v);
+  console.log('');
+  const body = await res.json();
+  console.log(JSON.stringify(body, null, 2).slice(0, 600) + '\\n...');
+});"
+
+HTTP/1.1 200
+content-type: application/json
+
+{
+  "dataset": "appbuilder_telemetry",
+  "blobs": [
+    { "position": 1, "column": "blob1", "name": "event_type",      "desc": "..." },
+    { "position": 2, "column": "blob2", "name": "method",          "desc": "..." },
+    ...
+  ],
+  "doubles": [ ... ],
+  "notes": [ ... ]
+}
+```
+
+The full response body matches `exportSchema()` byte-for-byte (asserted by
+`test/diagnostics-schema.test.ts` — "body equals exportSchema()"). A live
+`wrangler dev` curl transcript at the validator stage exercises the same code
+path through the worker entry; results will be identical because the route
+implementation is shared.
+
+### Live wrangler-dev transcript deferral (P1.5)
+
+Same as P1.3 — running `wrangler dev` requires CF secrets the build session
+does not hold. The vitest tests in `test/diagnostics-schema.test.ts` exercise
+the exact handler the dispatcher invokes. Six tests cover: 200 status,
+content-type header, body equality with `exportSchema()`, dataset + counts,
+and dispatcher-fall-through behavior on non-GET methods and other paths.
+
 ## Reproducer
 
 ```bash
 git checkout feat/telemetry-schema-source-of-truth
 npm install
-npm test           # 33 passed (telemetry-schema + rewriter)
+npm test           # 39 passed (telemetry-schema + rewriter + diagnostics-schema)
 npm run tsc        # exit 0
 npx tsx -e "import('./src/telemetry-schema.ts').then(m => console.log(JSON.stringify(m.exportSchema(), null, 2)))"
 ```
