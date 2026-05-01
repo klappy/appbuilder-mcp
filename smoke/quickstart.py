@@ -79,9 +79,17 @@ def _request(
     req = urllib.request.Request(url, data=data, headers=h, method=method)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.status, dict(resp.headers), resp.read()
+            return resp.status, _lower_headers(resp.headers), resp.read()
     except urllib.error.HTTPError as e:
-        return e.code, dict(e.headers or {}), e.read() or b""
+        return e.code, _lower_headers(e.headers), e.read() or b""
+
+
+def _lower_headers(headers: Any) -> dict[str, str]:
+    # HTTP headers are case-insensitive (RFC 7230). Normalize keys to lowercase
+    # so downstream lookups don't have to enumerate casings.
+    if not headers:
+        return {}
+    return {k.lower(): v for k, v in headers.items()}
 
 
 def _parse_sse_or_json(body: bytes) -> Any:
@@ -117,7 +125,7 @@ class McpSession:
             preview = raw[:300].decode("utf-8", errors="replace")
             raise RuntimeError(f"HTTP {status} from MCP endpoint: {preview!r}")
         # Capture session id on the initialize response.
-        sid = resp_headers.get("mcp-session-id") or resp_headers.get("Mcp-Session-Id")
+        sid = resp_headers.get("mcp-session-id")
         if sid and not self.session_id:
             self.session_id = sid
         return _parse_sse_or_json(raw)

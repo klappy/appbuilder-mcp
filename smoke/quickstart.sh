@@ -39,7 +39,7 @@ while [[ $# -gt 0 ]]; do
     --payload) PAYLOAD_PATH="$2"; shift 2 ;;
     --poll-seconds) POLL_SECONDS="$2"; shift 2 ;;
     -h|--help)
-      sed -n '2,/^set -euo/p' "$0" | sed 's/^# \?//'
+      sed -n '2,/^set -euo/{/^set -euo/d;p;}' "$0" | sed 's/^# \?//'
       exit 0
       ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
