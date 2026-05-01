@@ -51,6 +51,7 @@ import {
 } from "./job-state-do.js";
 import { fetchDocs } from "./docs.js";
 import { BUNDLED_POLICY } from "./bundled-policy.js";
+import { shimMcpAccept, downgradeSSEToJson } from "./accept-shim.js";
 import { exportSchema } from "./telemetry-schema.js";
 import { handleDiagnosticsSchema } from "./diagnostics-schema-route.js";
 import {
@@ -761,9 +762,19 @@ async function handleMcpWithTelemetry(
 
   const consumer = resolveConsumer(urlObj, req.headers, clientInfoName);
 
+  // Shim Accept header for non-spec-compliant clients before handing off
+  // to the SDK. See `shimMcpAccept` for rationale.
+  const { req: shimmedReq, downgradeToJson } = shimMcpAccept(req);
+
   // Pass through to the MCP handler
   const handler = isSSE ? mcpSseHandler : mcpHandler;
-  const response = await handler.fetch(req, env, ctx);
+  let response = await handler.fetch(shimmedReq, env, ctx);
+
+  // If the original client only accepted JSON, downgrade single-event
+  // SSE responses back to plain JSON so they can parse the reply.
+  if (downgradeToJson) {
+    response = await downgradeSSEToJson(response);
+  }
 
   // Emit telemetry after getting the response (non-blocking enrichment)
   if (rpc?.method) {
