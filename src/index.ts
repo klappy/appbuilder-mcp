@@ -1,13 +1,14 @@
 /**
  * AppBuilder MCP Worker — entry point.
  *
- * Exposes 6 MCP tools (mirrors klappy/ptxprint-mcp surface):
+ * Exposes 7 MCP tools (mirrors klappy/ptxprint-mcp surface):
  *   submit_build(payload)             → job_id (or cached URL)
  *   get_job_status(job_id)            → state / progress / urls / errors
  *   cancel_job(job_id)                → set DO flag; container polls
  *   docs(query, audience?, depth?)    → in-repo canon retrieval via oddkit proxy
  *   telemetry_policy()                → governance policy from canon (three-tier fallback)
  *   telemetry_public(sql)             → public Analytics Engine query forwarder
+ *   telemetry_schema()                → blob/double position-to-name mapping
  *
  * Agents bring their own URLs for the bible source, icons, about file, and
  * (optionally) keystore — the server does not host or stage input files.
@@ -50,6 +51,7 @@ import {
 } from "./job-state-do.js";
 import { fetchDocs } from "./docs.js";
 import { BUNDLED_POLICY } from "./bundled-policy.js";
+import { exportSchema } from "./telemetry-schema.js";
 import {
   runSnapshot,
   weekStartFor,
@@ -453,7 +455,7 @@ export class AppbuilderMcp extends McpAgent<Env> {
     // Authority: klappy://canon/specs/appbuilder-mcp-v1-spec §3 telemetry_public
     this.server.tool(
       "telemetry_public",
-      "Query the appbuilder_telemetry Analytics Engine dataset with SQL. The data is public — this is the same dashboard the maintainer sees. Use SUM(_sample_interval) instead of COUNT(*) for sample-correct totals. Rate-limited to 60 queries/consumer/hour. See telemetry_policy() for canned query examples.",
+      "Query the appbuilder_telemetry Analytics Engine dataset with SQL. The data is public — this is the same dashboard the maintainer sees. You may use semantic field names directly (e.g. `WHERE event_type = 'tool_call'`); the worker rewrites them to positional refs (`blob1` / `double2`) before forwarding to Analytics Engine. Call telemetry_schema() to discover the full position-to-name mapping. Use SUM(_sample_interval) instead of COUNT(*) for sample-correct totals. Rate-limited to 60 queries/consumer/hour. See telemetry_policy() for canned query examples.",
       {
         sql: z
           .string()
@@ -482,6 +484,29 @@ export class AppbuilderMcp extends McpAgent<Env> {
       },
     );
 
+    // ----- telemetry_schema ----- (v1.3)
+    //
+    // Exposes the blob/double position-to-name mapping so external query
+    // authors can discover field names without round-tripping through canon.
+    // Backed by exportSchema() in src/telemetry-schema.ts (single source of
+    // truth for positions). Companion to GET /diagnostics/schema.
+    // Authority: klappy://canon/specs/appbuilder-mcp-v1-spec §3 telemetry_schema
+    this.server.tool(
+      "telemetry_schema",
+      "Returns the appbuilder_telemetry blob/double position-to-name mapping plus query notes (sampling, timestamp filters, idempotent positional refs). Use this when authoring SQL for telemetry_public so you know which schema names are accepted by the rewriter and which positional columns they map to.",
+      {},
+      async () => {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(exportSchema(), null, 2),
+            },
+          ],
+        };
+      },
+    );
+
   }
 }
 
@@ -505,6 +530,7 @@ export default {
           "docs",
           "telemetry_public",
           "telemetry_policy",
+          "telemetry_schema",
         ],
       });
     }
