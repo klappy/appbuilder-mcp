@@ -258,6 +258,13 @@ function rewriteSelectColumn(col: string): string {
   }
 
   // Case 4: complex expression — substitute schema names without aliasing.
+  //   Peel off any trailing `AS alias` so a user-chosen alias matching a
+  //   schema field name (e.g. `AS count`) is preserved verbatim.
+  const aliasMatch = body.match(/^([\s\S]*?)(\s+(?:AS|as)\s+\w+)$/);
+  if (aliasMatch) {
+    const [, expr, asTail] = aliasMatch;
+    return `${leading}${substituteFieldsToCol(expr)}${asTail}${trailing}`;
+  }
   return `${leading}${substituteFieldsToCol(body)}${trailing}`;
 }
 
