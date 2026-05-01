@@ -278,3 +278,98 @@ If H-008 resolves with a fix path: implement, validate via re-smoke, encode as s
 If H-008 resolves with "this is an upstream bug": encode the response, consider pinning back to a known-good upstream tag, and continue Phase B ESE in parallel (Open-012) so canon keeps maturing while the build path is unblocked.
 
 If H-008 takes time: continue Phase B ESE (Open-012), address Open-009 (spec drift), and surface intermediate progress.
+
+---
+
+## Continuation — 23:5xZ pivot to multi-pass canon workflow
+
+The operator surfaced ptxprint-mcp's actual canon-seeding methodology: *iterative ESE → progressive disclosure rewrite → human-vs-agentic split → small-mapped-files BM25 optimization*. The four-pass structure is concretely realized in ptxprint-mcp at `canon/surfaces/` (Pass 1) → `canon/derivatives/ptxprint-training-manual.md` (Pass 2, project-audience pedagogical narrative with `[Lx · slides A–B]` back-refs) → `canon/articles/*` (Passes 3+4, 21 small agent-facing files each with `> Related articles. ...` line + frontmatter cross-refs).
+
+Phase A's 17 pages was Pass 1 partial. This continuation extends Pass 1 with strategic Phase B coverage and starts Pass 3 with two more small articles. Pass 2 (the linear derivative training manual for SAB) is still pending and tracked as Open-013.
+
+### D-017 — Pass 3 decomposition started; small-article pattern confirmed
+
+Two new articles promoted from the extended surface:
+
+- `canon/articles/apk-installation.md` — derived from PDF §3 pages 22–27. Three documented APK delivery paths, side-load warning posture, what the MCP cannot help with.
+- `canon/articles/keystore-reuse.md` — derived from PDF §4.9 page 32 + PDF §2 step 19 page 21. Answers "do I need a new keystore per app?" with the full per-organization-asset framing.
+
+Both follow ptxprint-mcp's Pass 3 conventions: `> Related articles. klappy://...` line in the blockquote, `companion_to` and `applied_canon` frontmatter, `provenance` field citing the PDF page as authority (not the surface artifact, per ESE §Promotion Rule), `audience: agent`, ≤200 lines.
+
+This brings the appbuilder-mcp `canon/articles/` count to 7: `bundled-debug-keystore.md`, `cli-reference.md`, `failure-mode-taxonomy.md`, `payload-construction.md`, `book-collections.md`, `apk-installation.md`, `keystore-reuse.md`. (For comparison: ptxprint-mcp ships 21.)
+
+### O-017 — Phase B continuation: 14 more pages surfaced
+
+Surface JSON and MD updated with segments for pages 23–32 and 135–138. Coverage now 28 of 197 pages (14%). Section coverage:
+
+- §3 Installing the app on your phone (pages 22–27) — fully surfaced.
+- §4.1 What sort of apps can I build? (27–29) — all sub-sections surfaced.
+- §4.2–§4.10 FAQ entries (29–32) — surfaced; §4.10 Pictures continues onto page 33 (deferred).
+- §15.4.2–§15.4.5 Book Collection context-menu actions (135) — surfaced.
+- §15.5.1–§15.5.6 Configuring a Book Collection tabs (136–138) — surfaced.
+
+### O-018 — `BookNames.xml` finding (PDF §4.8 page 31)
+
+PDF §4.8 documents that SAB's default-book-name resolution checks **`BookNames.xml`** in the same folder as the USFM files *first*, falling back to in-file `\toc2`/`\toc3` markers only when `BookNames.xml` is absent. DBL bundles use `metadata.xml` instead.
+
+Our `eng-web_usfm.zip` (sha256 `3c34cb69b4efe0670217e9fbf95b4f92501fcde319aa2e5c5a347097ff655278`) contains 83 USFM files plus `copr.htm`, `keys.asc`, `signature.txt.asc`, `gentiumplus.css` — and **no `BookNames.xml`**. Each USFM file does have `\h`, `\toc1/2/3` markers (verified on `02-GENeng-web.usfm`), so the documented `\toc2/\toc3` fallback should apply.
+
+If SAB v14.0 build 129 has changed the default-book-name resolution to *require* `BookNames.xml` rather than falling back, that would explain the empty-collection-1 complaint without contradicting the PDF — it would be a fallback-that-no-longer-falls-back regression in build 129.
+
+This is a **documented-behavior-derived hypothesis**, not a guess. It is cheap to test.
+
+### L-012 — Documented-behavior leads have higher status than guessed leads
+
+Session 5's filename-preservation hypothesis (e2b5067) was an honest guess based on the priming-script delta — it disproved cleanly per session 6's smoke. The BookNames.xml lead is structurally different: it's a documented expectation in §4.8 that we hadn't checked. The class hierarchy:
+
+1. **Documented-behavior leads** (e.g. BookNames.xml). Cite the page; testable; encode as H, not Open.
+2. **Documented-absence leads** (e.g. no `-bc` flag in the table). Encode as O; the absence is itself information.
+3. **Behavioral-delta guesses** (e.g. filename preservation). Encode as H but mark explicitly as a guess; disprove or confirm cheaply.
+4. **Speculation** (e.g. "maybe SAB requires X"). Don't encode; ask.
+
+The discipline: a hypothesis derived from documented behavior has higher epistemic status than one derived from differential observation alone. Test (1)-class leads first.
+
+### C-008 — Continuation-divider convention in session encodings
+
+Session encodings can grow within a session via `## Continuation — <timestamp>Z pivot to <topic>` dividers. New IDs (D, O, L, etc.) increment as normal under the continuation. This avoids spawning artificial session N.5 documents while preserving the linear narrative structure ptxprint-mcp's session encodings demonstrate.
+
+### H-008 — REFINED (was: ask Chris re collection 1)
+
+Refinement: include the BookNames.xml hypothesis explicitly in the question to Chris, so the answer either confirms it ("yes, BookNames.xml is now required") or rules it out ("no, the missing piece is X"). The materials list in the original H-008 stands; add a sentence: "We notice §4.8 documents BookNames.xml as the primary book-name source with `\toc2/\toc3` as fallback. Our zip lacks BookNames.xml. Has the fallback path been tightened or removed in build 129?"
+
+### H-009 — NEW: Test the BookNames.xml hypothesis (precedes H-008)
+
+**One-line scope.** Generate a `BookNames.xml` for the eng-web bundle (built from the `\h`/`\toc1/2/3` markers in each USFM file), re-zip with `BookNames.xml` at the root next to the USFM files, host the new zip with a fresh sha256, and resubmit a smoke. If collection 1 populates, hypothesis confirmed and H-008 narrows to "is this regression intentional?" If collection 1 still reports empty, hypothesis falsified and H-008 stands as the next move.
+
+**Materials needed.**
+
+- A `BookNames.xml` schema reference (Paratext's standard format — likely available at paratextapps.org or in Paratext's own docs).
+- Re-zipped bundle hosted somewhere the Container can fetch (could be a new file in this repo or any HTTPS-accessible location).
+- One smoke run with a perturbed `name` to bust cache.
+
+**Closure rule.** When the smoke completes, encode O-019 with the result. If state=succeeded and APK validates, close H-002, H-008, H-009, Open-011 in one stroke. If state=failed and the complaint persists, close H-009 (hypothesis falsified) and surface to operator with H-008 unchanged.
+
+**Cost.** ~30 minutes of work (script the `BookNames.xml` generation, zip, host, smoke). Cheap relative to round-tripping a question to upstream.
+
+**Priority.** P1 — same as H-002, since this could close H-002 in one session.
+
+**Rollback.** Smoking creates no durable state changes (cache miss → new job_id; failed job is recorded but doesn't pollute anything). No rollback needed.
+
+### Open-013 — NEW: Pass 2 derivative for SAB PDF not yet produced
+
+The four-pass workflow ptxprint-mcp followed has Pass 2 (linear pedagogical rewrite as a single derivative document) between Pass 1 (surfaces) and Pass 3 (decomposed articles). For the SAB PDF this would be `canon/derivatives/scripture-app-builder-manual.md` — a project-audience narrative organized around a learning sequence (Part 0 "Before you start" → Part 1 "First app" → Part 2 "Configurations" → ...) with `[§N.M page P]` back-refs to the surface and the underlying PDF.
+
+This continuation skipped Pass 2 in favor of more Phase B + Pass 3. Pass 2 is still pending and tracked as Open-013.
+
+**Priority.** P3 — useful for human-readable navigation and onboarding, lower priority than H-009 (book-collection-1 unblock) and Phase B coverage extension. Defer to a session that can give it focused attention.
+
+### Updated ID continuity through session 6 continuation
+
+- **D**: D-001..D-017
+- **O**: O-001..O-018
+- **L**: L-001..L-012
+- **C**: C-001..C-008
+- **H**: H-001 (closed s4), H-002 (active), H-003 (active), H-004 (closed s1), H-005 (superseded s4), H-006 (closed s5), H-007 (closed s6), H-008 (active, refined s6 cont.), H-009 (new s6 cont., active)
+- **Open**: Open-005 (closed s3), Open-006 (active), Open-007 (active), Open-008 (active), Open-009 (active), Open-010 (closed s6), Open-011 (active), Open-012 (active), Open-013 (new s6 cont., active)
+
+Session 7 continues at D-018, O-019, L-013, C-009, H-010, Open-014 if new items emerge.

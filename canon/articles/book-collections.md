@@ -69,13 +69,27 @@ Per `canon/encodings/transcript-encoded-session-6.md` O-014, our smoke build aga
 
 The bundle name is preserved (`eng-web_usfm.zip`, matching SIL's own priming-script convention). The `-build` flag is present. The keystore is supplied in the form the priming script demonstrates. Yet collection 1 reports empty.
 
-**The PDF does not explain this.** No `-bc`, `-collection`, or `-add-books` flag exists in the documented option table. The PDF's own worked example asserts that `-b ... -build` produces a built APK.
+The PDF's §4.14 CLI table does not document a separate book-association flag (`-bc`, `-collection`, `-add-books`, or any analogue). The page-38 worked example asserts that `-b ... -build` produces a built APK from one `-b`.
+
+## Hypothesis from §4.8 — `BookNames.xml` may be required for default name resolution
+
+The PDF page 31 §4.8 documents how SAB resolves default book names and abbreviations, in priority order:
+
+1. **`BookNames.xml`** — "the first place SAB will look for the book names is in the `BookNames.xml` file in the same folder as the USFM files." This is Paratext's per-project metadata file.
+2. **In-file `\toc2` and `\toc3` markers** — fallback when `BookNames.xml` is absent.
+3. **`metadata.xml`** — for DBL Text Release Bundles only.
+
+Our `eng-web_usfm.zip` (sha256 `3c34cb69b4efe0670217e9fbf95b4f92501fcde319aa2e5c5a347097ff655278`) contains 83 `*.usfm` files plus auxiliary files (`copr.htm`, `keys.asc`, `signature.txt.asc`, `gentiumplus.css`) — but **no `BookNames.xml`**. Each USFM file does have proper `\h`, `\toc1`, `\toc2`, `\toc3` markers (verified on `02-GENeng-web.usfm`), so the documented `\toc2/\toc3` fallback should apply.
+
+**Hypothesis (H-009).** SAB v14.0 build 129 may have changed the default-book-name resolution to *require* `BookNames.xml` before counting books toward a collection — meaning the documented `\toc2/\toc3` fallback is now insufficient on its own. This would explain why a well-formed zip with valid USFM markers still produces an empty collection 1.
+
+This hypothesis is **derived from documented PDF behavior, not speculation.** It is cheap to test: re-zip the eng-web bundle with a generated `BookNames.xml` (built from the `\h`/`\toc2`/`\toc3` markers in each USFM file) and re-smoke. If the hypothesis is correct, collection 1 populates; if not, the hypothesis is falsified and the H-008 question to Chris remains the next move.
 
 ## Open question (H-008)
 
-> Given image `ghcr.io/sillsdev/appbuilder-agent-stg:feature-scripture-burrito`, SAB v14.0 build 129, and a well-formed USFM zip in the priming-script style: is there a flag, file-format expectation, or import step that we're missing for `-b <zip>` to register books with book collection 1 such that `-build` succeeds?
+> Given image `ghcr.io/sillsdev/appbuilder-agent-stg:feature-scripture-burrito`, SAB v14.0 build 129, and a well-formed USFM zip in the priming-script style: is there a flag, file-format expectation (e.g. required `BookNames.xml`), or import step that we're missing for `-b <zip>` to register books with book collection 1 such that `-build` succeeds?
 
-This is the H-008 handoff to Chris Hubbard / SIL. The PDF's documented surface is exhausted; the next step is upstream domain knowledge.
+This is the H-008 handoff to Chris Hubbard / SIL. If H-009 (the BookNames.xml test) closes the gap, H-008 closes with it. Otherwise the question stands.
 
 ## What this means for `submit_build` callers
 
