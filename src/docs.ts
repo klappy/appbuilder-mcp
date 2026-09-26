@@ -1,36 +1,18 @@
 /**
- * docs.ts — thin proxy to oddkit MCP for in-repo canon retrieval.
+ * docs.ts — in-process retrieval over the bundled appbuilder-mcp canon.
  *
- * Shape A per session-13 plan: the PTXprint MCP server forwards `docs(...)`
- * calls to oddkit's HTTP MCP endpoint with `knowledge_base_url` pinned to
- * this repo. Server holds zero retrieval logic; oddkit does the BM25 work.
+ * The canon/ tree is bundled at build time (scripts/bundle-canon.ts ->
+ * src/canon-bundle.generated.ts) and searched here with a small BM25 scorer.
+ * No runtime call to oddkit or any other upstream: the docs tool works
+ * offline and its answers are pinned to the deployed commit.
  *
- * Vodka boundary check: this file knows two things — the URL of the canon
- * repo (this repo), and the URL of oddkit. It does not know any PTXprint
- * domain semantics. Forwarding only.
- *
- * Reverses session-2 D-004 ("no retrieval in the MCP server"). The reversal
- * is justified in canon/encodings/transcript-encoded-session-13.md (this
- * PR). Original D-004 was correct at the time — canon did not yet exist and
- * BT Servant was not yet a deadline. Both have changed.
- *
- * Implementation note (session-13 follow-up after operator review): the
- * outbound MCP call uses the official @modelcontextprotocol/sdk Client +
- * StreamableHTTPClientTransport rather than hand-rolled fetch + SSE
- * parsing. The SDK already does the initialize handshake, session ID
- * tracking, SSE framing, and reconnection. Reinventing those was the
- * mistake the first commit on this branch made.
+ * History: this file was previously a thin proxy to oddkit's MCP endpoint
+ * (session-13 Shape A). Migrated off runtime oddkit chaining per the kitchen
+ * oddkit-legacy-caller-audit, borrowing ptxprint-mcp's bundled
+ * progressive-disclosure docs pattern. Response shape is unchanged.
  */
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-
-const ODDKIT_MCP_URL = "https://oddkit.klappy.dev/mcp";
-const CANON_KB_URL = "https://github.com/klappy/appbuilder-mcp";
-const USER_AGENT = "appbuilder-mcp-docs/0.1";
-
-const SEARCH_TIMEOUT_MS = 5_000;
-const GET_TIMEOUT_MS = 10_000;
+import { CANON_BUNDLE, type BundledDoc } from "./canon-bundle.generated";
 
 // ---------- Public types ----------
 
@@ -48,11 +30,11 @@ export interface DocsResult {
   answer: string | null;
   sources: DocsSource[];
   deeper: string[];
-  governance_source: "knowledge_base" | "minimal";
+  governance_source: "bundled";
   error?: string;
 }
 
-// ---------- oddkit response shapes (only fields we use) ----------
+// ---------- search hit shape (internal) ----------
 
 interface OddkitSearchHit {
   uri: string;
@@ -64,208 +46,97 @@ interface OddkitSearchHit {
   source: string;
 }
 
-interface OddkitSearchResult {
-  status: string;
-  hits: OddkitSearchHit[];
-}
-
-interface OddkitGetResult {
-  path: string;
-  content: string;
-  content_hash?: string;
-}
-
 // ---------- The tool entry point ----------
 
 export async function fetchDocs(
   query: string,
   audience: DocsAudience = "headless",
   depth: DocsDepth = 1,
+  corpus: BundledDoc[] = CANON_BUNDLE,
 ): Promise<DocsResult> {
-  // One MCP session per call. The SDK Client + transport are cheap to
-  // construct; pooling/reuse is a future optimization, not Day-1.
-  let client: Client | null = null;
-  try {
-    client = await openOddkitClient();
-    const oddkit = client; // narrow once for closures (Promise.allSettled below).
+  const hits = searchBundle(query, corpus);
+  if (hits.length === 0) {
+    return { answer: null, sources: [], deeper: suggestDeeperQueries(query), governance_source: "bundled" };
+  }
+  const ranked = audienceRank(hits, audience);
+  const top = ranked[0];
+  const full = (uri: string) => corpus.find((d) => d.uri === uri)?.content;
 
-    // Step 1 — search.
-    const searchResult = await callOddkit<OddkitSearchResult>(
-      oddkit,
-      "search",
-      query,
-      SEARCH_TIMEOUT_MS,
-    );
-
-    if (!searchResult || !searchResult.hits || searchResult.hits.length === 0) {
-      return {
-        answer: null,
-        sources: [],
-        deeper: suggestDeeperQueries(query),
-        governance_source: "knowledge_base",
-      };
-    }
-
-    // Step 2 — apply audience bias. Headless = prefer docs whose tags include
-    // "headless", "agent-kb", "mcp"; gui = prefer "gui", "training", "manual".
-    // Bias is a sort tiebreaker, not a hard filter — if no audience-tagged hits
-    // exist, the original ranking stands.
-    const ranked = audienceRank(searchResult.hits, audience);
-    const top = ranked[0];
-
-    // Step 3 — depth handling.
-    if (depth === 1) {
-      return {
-        answer: top.snippet,
-        sources: ranked.slice(0, 5).map(toSource),
-        deeper: suggestDeeperFromHits(ranked),
-        governance_source: "knowledge_base",
-      };
-    }
-
-    // depth >= 2: fetch the full top doc.
-    let topDoc: OddkitGetResult | null = null;
-    try {
-      topDoc = await callOddkit<OddkitGetResult>(oddkit, "get", top.uri, GET_TIMEOUT_MS);
-    } catch {
-      // Fall back to the depth=1 shape if the get fails — partial-credit
-      // is better than total-failure here, and the search results are valid.
-      return {
-        answer: top.snippet,
-        sources: ranked.slice(0, 5).map(toSource),
-        deeper: suggestDeeperFromHits(ranked),
-        governance_source: "knowledge_base",
-      };
-    }
-
-    const sources: DocsSource[] = [
-      {
-        uri: top.uri,
-        title: top.title,
-        snippet: topDoc?.content ?? top.snippet,
-        score: top.score,
-      },
-      ...ranked.slice(1, 5).map(toSource),
-    ];
-
-    // depth=3: also fetch the next 2 ranked docs in full, in parallel.
-    if (depth === 3) {
-      const neighbors = ranked.slice(1, 3);
-      const results = await Promise.allSettled(
-        neighbors.map((n) =>
-          callOddkit<OddkitGetResult>(oddkit, "get", n.uri, GET_TIMEOUT_MS),
-        ),
-      );
-      for (let i = 0; i < results.length; i++) {
-        const r = results[i];
-        if (r.status === "fulfilled" && r.value && sources[i + 1]) {
-          sources[i + 1].snippet = r.value.content;
-        }
-        // On rejection, leave the snippet in place; partial enrichment is fine.
-      }
-    }
-
+  if (depth === 1) {
     return {
-      answer: topDoc?.content ?? top.snippet,
-      sources,
+      answer: top.snippet,
+      sources: ranked.slice(0, 5).map(toSource),
       deeper: suggestDeeperFromHits(ranked),
-      governance_source: "knowledge_base",
+      governance_source: "bundled",
     };
-  } catch (err) {
-    return {
-      answer: null,
-      sources: [],
-      deeper: [],
-      governance_source: "minimal",
-      error: `docs upstream unavailable: ${err instanceof Error ? err.message : String(err)}`,
-    };
-  } finally {
-    if (client) {
-      try {
-        await client.close();
-      } catch {
-        // Best-effort cleanup; nothing actionable on close errors.
-      }
+  }
+  const sources: DocsSource[] = ranked.slice(0, 5).map(toSource);
+  sources[0].snippet = full(top.uri) ?? top.snippet;
+  if (depth === 3) {
+    for (let i = 1; i < 3 && i < sources.length; i++) {
+      sources[i].snippet = full(sources[i].uri) ?? sources[i].snippet;
     }
   }
+  return {
+    answer: sources[0].snippet,
+    sources,
+    deeper: suggestDeeperFromHits(ranked),
+    governance_source: "bundled",
+  };
 }
 
 // ---------- Internals ----------
 
-async function openOddkitClient(): Promise<Client> {
-  const transport = new StreamableHTTPClientTransport(new URL(ODDKIT_MCP_URL), {
-    requestInit: {
-      headers: {
-        "user-agent": USER_AGENT,
-      },
-    },
-  });
-  const client = new Client({
-    name: "appbuilder-mcp-docs",
-    version: "0.1.0",
-  });
-  await client.connect(transport);
-  return client;
+const STOP = new Set(["the", "a", "an", "and", "or", "of", "to", "in", "is", "it", "for", "on", "how", "do", "i", "what", "with", "by", "be", "can", "this", "that", "my"]);
+
+function tokenize(s: string): string[] {
+  return (s.toLowerCase().match(/[a-z0-9][a-z0-9_-]*/g) ?? []).filter((t) => t.length > 1 && !STOP.has(t));
 }
 
-/**
- * Call oddkit via the SDK Client and unwrap its response shape.
- *
- * Oddkit's MCP `oddkit` tool returns a standard MCP CallToolResult whose
- * `content[0].text` is a JSON-stringified envelope of shape
- * `{ result: ..., assistant_text: ..., debug: ..., server_time: ... }`.
- * We pull `.result` off and return it typed.
- */
-async function callOddkit<T>(
-  client: Client,
-  action: "search" | "get",
-  input: string,
-  timeoutMs: number,
-): Promise<T | null> {
-  const args: Record<string, unknown> = {
-    action,
-    input,
-    knowledge_base_url: CANON_KB_URL,
-  };
-  // For search, prefer overlay docs (this repo's canon) over the baseline
-  // (klappy.dev) so PTXprint-specific results rank first.
-  if (action === "search") {
-    args.result_grouping = "overlay_first";
+/** BM25 over title (weighted x3) + tags (x2) + body. */
+export function searchBundle(query: string, corpus: BundledDoc[] = CANON_BUNDLE): OddkitSearchHit[] {
+  const qTerms = [...new Set(tokenize(query))];
+  if (qTerms.length === 0) return [];
+  const docTokens = corpus.map((d) => [
+    ...tokenize(d.title), ...tokenize(d.title), ...tokenize(d.title),
+    ...tokenize(d.tags.join(" ")), ...tokenize(d.tags.join(" ")),
+    ...tokenize(d.content),
+  ]);
+  const N = corpus.length;
+  const avgdl = docTokens.reduce((a, t) => a + t.length, 0) / Math.max(N, 1);
+  const df = new Map<string, number>();
+  for (const q of qTerms) df.set(q, docTokens.filter((t) => t.includes(q)).length);
+  const k1 = 1.2, b = 0.75;
+  const hits: OddkitSearchHit[] = [];
+  corpus.forEach((d, i) => {
+    const toks = docTokens[i];
+    let score = 0;
+    for (const q of qTerms) {
+      const tf = toks.reduce((a, t) => a + (t === q ? 1 : 0), 0);
+      if (!tf) continue;
+      const n = df.get(q) ?? 0;
+      const idf = Math.log(1 + (N - n + 0.5) / (n + 0.5));
+      score += idf * ((tf * (k1 + 1)) / (tf + k1 * (1 - b + (b * toks.length) / avgdl)));
+    }
+    if (score > 0) {
+      hits.push({ uri: d.uri, path: d.path, title: d.title, tags: d.tags, score: Math.round(score * 1000) / 1000, snippet: snippetFor(d.content, qTerms), source: "bundled" });
+    }
+  });
+  hits.sort((a, b2) => b2.score - a.score);
+  return hits.slice(0, 10);
+}
+
+function snippetFor(content: string, terms: string[]): string {
+  const body = content.replace(/^---\n[\s\S]*?\n---\n?/, "");
+  const paras = body.split(/\n\s*\n/).filter((p) => p.trim().length > 0);
+  let best = paras[0] ?? "";
+  let bestScore = -1;
+  for (const p of paras) {
+    const lp = p.toLowerCase();
+    const s = terms.reduce((a, t) => a + (lp.includes(t) ? 1 : 0), 0);
+    if (s > bestScore) { best = p; bestScore = s; }
   }
-
-  const result = await client.callTool(
-    {
-      name: "oddkit",
-      arguments: args,
-    },
-    undefined,
-    {
-      timeout: timeoutMs,
-    },
-  );
-
-  // The SDK throws on JSON-RPC errors automatically. But oddkit can also
-  // signal tool-level failures via isError: true on a successful response;
-  // surface those as exceptions too so fetchDocs's outer catch routes them
-  // to graceful-degrade rather than silently returning null.
-  const typed = result as {
-    isError?: boolean;
-    content?: Array<{ type: string; text?: string }>;
-  };
-  if (typed.isError) {
-    const errText = typed.content?.[0]?.text ?? "unknown oddkit tool error";
-    throw new Error(`oddkit tool error: ${errText.slice(0, 200)}`);
-  }
-
-  const inner = typed.content?.[0]?.text;
-  if (typeof inner !== "string") {
-    throw new Error("oddkit response missing content[0].text");
-  }
-
-  // Inner is the oddkit envelope: { action, result, assistant_text, debug, server_time }.
-  // We want .result, which is the OddkitSearchResult / OddkitGetResult.
-  const parsed = JSON.parse(inner) as { result?: T };
-  return parsed?.result ?? null;
+  return best.trim().slice(0, 600);
 }
 
 /**

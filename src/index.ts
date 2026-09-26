@@ -5,7 +5,7 @@
  *   submit_build(payload)             → job_id (or cached URL)
  *   get_job_status(job_id)            → state / progress / urls / errors
  *   cancel_job(job_id)                → set DO flag; container polls
- *   docs(query, audience?, depth?)    → in-repo canon retrieval via oddkit proxy
+ *   docs(query, audience?, depth?)    → in-repo canon retrieval over bundled canon (no upstream)
  *   telemetry_policy()                → governance policy from canon (three-tier fallback)
  *   telemetry_public(sql)             → public Analytics Engine query forwarder
  *   telemetry_schema()                → blob/double position-to-name mapping
@@ -361,14 +361,14 @@ export class AppbuilderMcp extends McpAgent<Env> {
 
     // ----- docs -----
     //
-    // Thin proxy to oddkit MCP for in-repo canon retrieval. Reverses session-2
+    // In-process search over bundled canon (src/canon-bundle.generated.ts). Reverses session-2
     // D-004 ("no retrieval in MCP server") for one specific reason: downstream
     // agents (BT Servant, others) want one MCP wired up, not two. The retrieval
-    // brain still lives in oddkit; this tool is a forwarding layer pinned to
+    // corpus is bundled at build; no runtime oddkit call. Pinned to
     // this repo's canon. See src/docs.ts for the vodka-boundary check.
     this.server.tool(
       "docs",
-      "Search the appbuilder-mcp canon (in-repo documentation) and return relevant guidance. Backed by oddkit; no separate oddkit setup required by the caller. Use depth=1 for snippet-level answers, depth=2 for the full top doc, depth=3 for top doc plus the next two ranked docs in full. Audience='headless' biases toward agent-facing docs (default); 'gui' biases toward training-manual docs.",
+      "Search the appbuilder-mcp canon (in-repo documentation) and return relevant guidance. Served from the canon bundled at deploy time; no upstream calls. Use depth=1 for snippet-level answers, depth=2 for the full top doc, depth=3 for top doc plus the next two ranked docs in full. Audience='headless' biases toward agent-facing docs (default); 'gui' biases toward training-manual docs.",
       {
         query: z.string().min(1).describe("Natural-language question or topic."),
         audience: z
