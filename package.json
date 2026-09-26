@@ -11,7 +11,9 @@
     "cf-typegen": "wrangler types",
     "test": "vitest run",
     "test:watch": "vitest",
-    "bundle-policy": "node --import tsx/esm scripts/bundle-telemetry-policy.ts"
+    "bundle-policy": "node --import tsx/esm scripts/bundle-telemetry-policy.ts",
+    "bundle-canon": "node --import tsx/esm scripts/bundle-canon.ts",
+    "pretest": "node --import tsx/esm scripts/bundle-canon.ts --check"
   },
   "engines": {
     "node": ">=20"
